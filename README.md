@@ -75,3 +75,4 @@ hand-labeled ground truth, no LLM judge involved.
 2. `uv run python -m app.eval.ragas_eval`
 
 Reports per-query and mean context precision/recall.
+
