@@ -1,7 +1,8 @@
 """Streamlit demo UI: type a query, get back the matching 10s clips.
 
 Talks directly to the retrieval code (no FastAPI process needed for the
-demo) -- CLIP + Qdrant similarity search only, with an optional Groq
+demo) -- embedding-based Qdrant similarity search only (backend model
+swappable via EMBEDDING_BACKEND in app/config.py), with an optional Groq
 "chat mode" for query cleanup + a conversational summary. Groq never
 touches clip content, only the text query and already-retrieved metadata.
 
@@ -22,7 +23,7 @@ from app.config import GROQ_API_KEY, QDRANT_COLLECTION
 st.set_page_config(page_title="Video Library RAG (POC)", page_icon="🎥", layout="wide")
 
 
-@st.cache_resource(show_spinner="Loading CLIP model (first run only, then cached)...")
+@st.cache_resource(show_spinner="Loading embedding model (first run only, then cached)...")
 def _warm_model():
     from app.pipeline.embedder import _load_model
     _load_model()
@@ -55,7 +56,7 @@ def _list_camera_ids() -> list[str]:
 
 st.title("🎥 Video Library RAG — POC")
 st.caption(
-    "Retrieval-only: CLIP embeddings + Qdrant similarity search. "
+    "Retrieval-only: embedding-based similarity search via Qdrant. "
     "No LLM ever watches the footage."
 )
 

@@ -12,7 +12,13 @@ import open_clip
 import torch
 from PIL import Image
 
-from app.config import CLIP_MODEL_NAME, CLIP_PRETRAINED, FRAMES_PER_CLIP
+from app.config import (
+    CLIP_MODEL_NAME,
+    CLIP_PRETRAINED,
+    EMBEDDING_BACKEND,
+    FRAMES_PER_CLIP,
+    LONGCLIP_CHECKPOINT_PATH,
+)
 
 _device = "cuda" if torch.cuda.is_available() else "cpu"
 _model = None
@@ -20,14 +26,33 @@ _preprocess = None
 _tokenizer = None
 
 
+def _load_open_clip():
+    model, _, preprocess = open_clip.create_model_and_transforms(
+        CLIP_MODEL_NAME, pretrained=CLIP_PRETRAINED, device=_device
+    )
+    tokenizer = open_clip.get_tokenizer(CLIP_MODEL_NAME)
+    model.eval()
+    return model, preprocess, tokenizer
+
+
+def _load_longclip():
+    from vendor.longclip import longclip
+
+    model, preprocess = longclip.load(str(LONGCLIP_CHECKPOINT_PATH), device=_device)
+    model.eval()
+    # longclip.tokenize supports up to 248 tokens (vs. base CLIP's 77) --
+    # wrap it so callers get the same tokenizer(list[str]) -> Tensor interface.
+    tokenizer = lambda texts: longclip.tokenize(texts)
+    return model, preprocess, tokenizer
+
+
 def _load_model():
     global _model, _preprocess, _tokenizer
     if _model is None:
-        _model, _, _preprocess = open_clip.create_model_and_transforms(
-            CLIP_MODEL_NAME, pretrained=CLIP_PRETRAINED, device=_device
-        )
-        _tokenizer = open_clip.get_tokenizer(CLIP_MODEL_NAME)
-        _model.eval()
+        if EMBEDDING_BACKEND == "longclip":
+            _model, _preprocess, _tokenizer = _load_longclip()
+        else:
+            _model, _preprocess, _tokenizer = _load_open_clip()
     return _model, _preprocess, _tokenizer
 
 

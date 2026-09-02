@@ -17,3 +17,6 @@ data/raw_videos/*
 !data/raw_videos/.gitkeep
 data/clips/*
 !data/clips/.gitkeep
+
+# Downloaded model checkpoints -- large binaries, re-downloadable, not committed
+data/model_cache/
