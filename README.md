@@ -1,4 +1,4 @@
-# VectorEye (POC)
+# VectorEye
 
 Plug-and-play video library search for CCTV/surveillance footage. Recordings
 are chunked into 10-second clips, embedded with CLIP into a shared
@@ -7,10 +7,6 @@ similarity search in Qdrant. **No LLM ever watches or reasons about video
 content** — retrieval is pure nearest-neighbor over embeddings. Groq (free
 tier) is used only to clean up the user's query text and narrate results,
 never to look at footage.
-
-Design rationale and decision history live in the vault note (Obsidian
-Vault#1, `Projects/VectorEye.md`) — this README covers setup/status
-only.
 
 ## Stack
 
@@ -32,7 +28,7 @@ cp .env.example .env   # fill in GROQ_API_KEY if you want the /chat endpoint
 docker compose up -d   # starts Qdrant on localhost:6333
 ```
 
-Place the POC's source videos in `data/raw_videos/` (`.mp4`/`.mov`/`.mkv`/`.avi`).
+Place the source videos in `data/raw_videos/` (`.mp4`/`.mov`/`.mkv`/`.avi`).
 
 ## Run the pipeline
 
@@ -80,7 +76,3 @@ hand-labeled ground truth, no LLM judge involved.
 
 Reports per-query and mean context precision/recall.
 
-## Status
-
-Scaffolded, not yet run end-to-end — awaiting the 3 POC source videos.
-Progress tracked in the vault note, not here.
