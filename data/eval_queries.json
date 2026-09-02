@@ -1,0 +1,4 @@
+{
+  "_readme": "Ground truth for retrieval eval. Each entry: 'query' (natural-language search text) and 'relevant_clips' (ground-truth-correct clip filenames, not full paths -- hand-label these by watching the actual source footage once the 3 POC videos are indexed). Currently empty -- app/eval/ragas_eval.py will report 'no eval queries defined' until this is filled in.",
+  "queries": []
+}

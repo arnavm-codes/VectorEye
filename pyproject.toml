@@ -1,0 +1,36 @@
+[project]
+name = "vectoreye"
+version = "0.1.0"
+description = "CLIP + Qdrant video clip search POC (no video-LLM, retrieval-only)"
+authors = [
+    { name = "Arnav Mazumdar", email = "forarnavm2004@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "torch",
+    "torchvision",
+    "open-clip-torch",
+    "pillow",
+    "opencv-python-headless",
+    "qdrant-client",
+    "fastapi",
+    "uvicorn[standard]",
+    "groq",
+    "python-multipart",
+    "streamlit",
+    "python-dotenv",
+    "ragas>=0.4.3",
+    "langchain-community==0.3.31",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

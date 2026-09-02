@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Env vars / secrets
+.env
+
+# POC data -- videos and derived clips are local-only, not committed
+data/raw_videos/*
+!data/raw_videos/.gitkeep
+data/clips/*
+!data/clips/.gitkeep
