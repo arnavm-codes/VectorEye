@@ -22,8 +22,13 @@ or a personal video archive for "the dog running on the beach."
 ## Stack
 
 - **Chunking**: FFmpeg (fixed-length, overlapping segments — configurable)
-- **Embedding**: CLIP (`open_clip`, `ViT-B-32`/openai weights, or a
+- **Visual embedding**: CLIP (`open_clip`, `ViT-B-32`/openai weights, or a
   Long-CLIP backend), sparse frame sampling + max-pool per clip
+- **Speech-content search (optional)**: `faster-whisper` (`tiny`, CPU) with
+  its built-in VAD skips clips with no detected speech; transcripts are
+  embedded separately with `sentence-transformers` (`all-MiniLM-L6-v2`) and
+  fused with the visual ranking at query time via Qdrant's native
+  Reciprocal Rank Fusion — see "Speech-content search" below
 - **Vector DB**: Qdrant (self-hosted via Docker)
 - **API**: FastAPI (`/search` — raw retrieval, `/chat` — Groq-wrapped)
 - **Chat**: Groq free-tier API, query-side only
@@ -62,6 +67,33 @@ uv run streamlit run app/ui/streamlit_app.py
 Type a query, optionally toggle "Groq chat mode" (requires `GROQ_API_KEY`),
 and view the matched clips with inline playback. Talks directly to the
 retrieval code — no separate API process needed for the demo.
+
+## Speech-content search (optional)
+
+In addition to visual (CLIP) search, VectorEye can search *what's said* in a
+clip's audio — useful for moments a visual query can't cleanly describe
+("someone shouting after a sudden stop" has no clean CLIP-searchable visual
+equivalent, but the words are right there in the audio).
+
+- Controlled by `ENABLE_AUDIO_SEARCH` (default `true`) in `.env`/`app/config.py`.
+  When on, indexing runs each clip's audio through VAD-gated Whisper
+  transcription — clips with no detected speech are skipped entirely, no
+  wasted embedding cost.
+- Each clip's transcript (when present) is stored as a second, independent
+  named vector (`transcript`) alongside the visual one (`visual`) on the
+  same Qdrant point — not a separate collection, and not blended into the
+  CLIP embedding (CLIP's text encoder isn't suited to general sentence
+  semantics, so transcripts get their own embedding model and vector space).
+- At query time, pass `use_transcript_fusion=True` to `search_clips()` (or
+  toggle "Fuse in speech content" in the Streamlit UI) to combine the
+  visual and transcript rankings via Qdrant's native RRF fusion. Off by
+  default — fusion isn't purely additive, it can slightly reorder results
+  even for visual-only queries, so it's opt-in rather than always-on.
+- Cost: on CPU, VAD+transcription adds roughly 25–40% to per-clip indexing
+  time (visual embedding stays the dominant cost); a fusion-enabled search
+  runs ~15% slower than visual-only. All models load lazily and are cached
+  for the life of the process — the Streamlit UI pre-warms them at startup
+  so the first search a user runs isn't the one that pays the load cost.
 
 ## Serve the API
 

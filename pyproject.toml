@@ -25,6 +25,8 @@ dependencies = [
     "regex",
     "huggingface-hub",
     "packaging",
+    "faster-whisper",
+    "sentence-transformers",
 ]
 
 [tool.uv]
