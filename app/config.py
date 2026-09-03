@@ -10,6 +10,11 @@ RAW_VIDEOS_DIR = PROJECT_ROOT / "data" / "raw_videos"
 CLIPS_DIR = PROJECT_ROOT / "data" / "clips"
 
 CLIP_DURATION_SECONDS = 10
+# A second, offset chunking pass (start times CHUNK_OVERLAP_SECONDS, +CLIP_DURATION_SECONDS,
+# ...) runs alongside the base 0/10/20s pass, so an event spanning a fixed-chunk
+# boundary still lands cleanly inside at least one clip instead of being split
+# across two weak-scoring ones. 5s = 50% overlap with a 10s clip duration.
+CHUNK_OVERLAP_SECONDS = 5
 FRAMES_PER_CLIP = 10  # denser sampling improves color/attribute-binding accuracy
 # (e.g. "a red car" vs a similar blue car); 3 was too sparse -- see vault
 # note's retrieval-quality findings. Negligible cost at this POC's scale.
