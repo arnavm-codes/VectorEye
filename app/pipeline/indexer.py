@@ -22,7 +22,7 @@ from app.config import (
 )
 from app.pipeline.embedder import embed_clip
 
-_CLIP_NAME_RE = re.compile(r"^(?P<camera_id>.+)_clip(?P<index>\d+)$")
+_CLIP_NAME_RE = re.compile(r"^(?P<camera_id>.+)_clip(?P<start_ts>\d+)$")
 
 
 def get_client() -> QdrantClient:
@@ -40,13 +40,16 @@ def ensure_collection(client: QdrantClient):
 def _parse_clip_metadata(clip_path: Path) -> dict:
     match = _CLIP_NAME_RE.match(clip_path.stem)
     if not match:
-        return {"camera_id": clip_path.stem, "index": 0}
-    index = int(match.group("index"))
+        return {"camera_id": clip_path.stem, "start_ts": 0, "end_ts": CLIP_DURATION_SECONDS}
+    # The number in the filename is the clip's actual start second in the
+    # source video (see chunker.py) -- not a sequential index -- since two
+    # overlapping chunking passes (offsets 0 and CHUNK_OVERLAP_SECONDS) share
+    # this naming scheme and can't be told apart by a plain sequence number.
+    start_ts = int(match.group("start_ts"))
     return {
         "camera_id": match.group("camera_id"),
-        "index": index,
-        "start_ts": index * CLIP_DURATION_SECONDS,
-        "end_ts": (index + 1) * CLIP_DURATION_SECONDS,
+        "start_ts": start_ts,
+        "end_ts": start_ts + CLIP_DURATION_SECONDS,
     }
 
 

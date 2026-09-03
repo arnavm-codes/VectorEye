@@ -1,9 +1,13 @@
-"""CLIP-based embedding: sparse frame sampling + mean-pool per clip.
+"""CLIP-based embedding: sparse frame sampling + max-pool per clip.
 
-No captioning, no LLM -- a clip's embedding is the mean of a few sampled
-frame embeddings, living in the same joint space as CLIP's text encoder.
-See vault note "Research" section for why this is sufficient without an
-explicit transcription/captioning step.
+No captioning, no LLM -- a clip's embedding is the elementwise max of a few
+sampled frame embeddings, living in the same joint space as CLIP's text
+encoder. Max pooling (not mean) lets the single frame that most strongly
+expresses a feature (e.g. a red car in one sampled frame) dominate that
+dimension instead of being diluted by other frames that don't show it --
+targets the color/attribute-binding weakness noted in the vault note. See
+vault note "Research" section for why this frame-embedding approach is
+sufficient without an explicit transcription/captioning step.
 """
 
 import cv2
@@ -75,7 +79,7 @@ def sample_frames(clip_path, n_frames: int = FRAMES_PER_CLIP) -> list[Image.Imag
 
 
 def embed_clip(clip_path) -> np.ndarray:
-    """Returns a single mean-pooled, L2-normalized embedding vector for a clip."""
+    """Returns a single max-pooled, L2-normalized embedding vector for a clip."""
     model, preprocess, _ = _load_model()
     frames = sample_frames(clip_path)
     if not frames:
@@ -85,7 +89,7 @@ def embed_clip(clip_path) -> np.ndarray:
     with torch.no_grad():
         frame_embeds = model.encode_image(batch)
         frame_embeds = frame_embeds / frame_embeds.norm(dim=-1, keepdim=True)
-        clip_embed = frame_embeds.mean(dim=0)
+        clip_embed = frame_embeds.max(dim=0).values
         clip_embed = clip_embed / clip_embed.norm()
 
     return clip_embed.cpu().numpy()
