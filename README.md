@@ -1,4 +1,13 @@
-# VectorEye
+```
+█   █ █████  ███  █████  ███  ████  █████ █   █ █████   
+█░  █░█░░░░░█ ░░░  ░█░░░█ ░░█ █░░░█ █░░░░░ █ █ ░█░░░░░  
+█░░ █░████░░█░ ░░░  █░░░█░ ░█░████░░████░░░ █ ░ ████░░░ 
+ █░█ ░█░░░░ █░░     █░░ █░░ █░█░░█░ █░░░░   █░ ░█░░░░   
+  █ ░ █████░ ███    █░░  ███ ░█░░░█░█████░  █░░ █████░  
+   ░ ░ ░░░░░  ░░░    ░░   ░░░ ░░░  ░ ░░░░░   ░░  ░░░░░  
+    ░   ░░░░░  ░░░    ░    ░░░  ░   ░ ░░░░░   ░   ░░░░░ 
+```
+
 
 A plug-and-play semantic search engine for **any video library** —
 surveillance/CCTV archives, media libraries, sports or event footage,
@@ -32,6 +41,10 @@ or a personal video archive for "the dog running on the beach."
 - **Vector DB**: Qdrant (self-hosted via Docker)
 - **API**: FastAPI (`/search` — raw retrieval, `/chat` — Groq-wrapped)
 - **Chat**: Groq free-tier API, query-side only
+
+## Architecture
+
+![VectorEye architecture](docs/assets/architecture.png)
 
 All models are open-weight and run locally/CPU-only. Groq is the one
 externally-hosted piece, isolated to the non-critical chat layer. Nothing
