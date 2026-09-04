@@ -134,3 +134,7 @@ hand-labeled ground truth, no LLM judge involved.
 
 Reports per-query and mean context precision/recall.
 
+## License
+
+MIT — see [LICENSE](LICENSE).
+
