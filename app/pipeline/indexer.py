@@ -1,8 +1,15 @@
 """Embeds all chunked clips and upserts them into Qdrant.
 
+Each point carries two independent named vectors: "visual" (CLIP, always
+present) and "transcript" (sentence-embedded Whisper transcript, present
+only on clips where VAD-gated transcription found real speech). See vault
+note "Feasibility study" entry (2026-09-03) for why these live in separate
+vector spaces rather than one blended embedding.
+
 Payload carries clip_path/camera_id/start_ts/end_ts so search can combine
 vector similarity with structured filtering (see vault note "Vector DB"
-section for why Qdrant was fixated for this).
+section for why Qdrant was fixated for this), plus has_speech/transcript
+for the audio signal.
 """
 
 import re
@@ -16,9 +23,11 @@ from app.config import (
     CLIP_DURATION_SECONDS,
     CLIP_EMBED_DIM,
     CLIPS_DIR,
+    ENABLE_AUDIO_SEARCH,
     QDRANT_COLLECTION,
     QDRANT_HOST,
     QDRANT_PORT,
+    TRANSCRIPT_EMBED_DIM,
 )
 from app.pipeline.embedder import embed_clip
 
@@ -33,7 +42,10 @@ def ensure_collection(client: QdrantClient):
     if not client.collection_exists(QDRANT_COLLECTION):
         client.create_collection(
             collection_name=QDRANT_COLLECTION,
-            vectors_config=VectorParams(size=CLIP_EMBED_DIM, distance=Distance.COSINE),
+            vectors_config={
+                "visual": VectorParams(size=CLIP_EMBED_DIM, distance=Distance.COSINE),
+                "transcript": VectorParams(size=TRANSCRIPT_EMBED_DIM, distance=Distance.COSINE),
+            },
         )
 
 
@@ -61,7 +73,20 @@ def index_clips(clips_dir: Path = CLIPS_DIR) -> int:
     points = []
     for clip_path in clip_paths:
         print(f"Embedding {clip_path.name} ...")
-        vector = embed_clip(clip_path)
+        visual_vector = embed_clip(clip_path)
+        vectors = {"visual": visual_vector.tolist()}
+
+        transcript = None
+        if ENABLE_AUDIO_SEARCH:
+            from app.pipeline.transcriber import transcribe_clip
+
+            transcript = transcribe_clip(clip_path)
+            if transcript:
+                from app.pipeline.text_embedder import embed_transcript_text
+
+                print(f"  -> speech detected: {transcript!r}")
+                vectors["transcript"] = embed_transcript_text(transcript).tolist()
+
         meta = _parse_clip_metadata(clip_path)
         # Deterministic ID from clip_path (not a fresh uuid4 every run) so
         # re-running the pipeline upserts/overwrites existing clips instead
@@ -70,8 +95,13 @@ def index_clips(clips_dir: Path = CLIPS_DIR) -> int:
         points.append(
             PointStruct(
                 id=point_id,
-                vector=vector.tolist(),
-                payload={"clip_path": str(clip_path), **meta},
+                vector=vectors,
+                payload={
+                    "clip_path": str(clip_path),
+                    "has_speech": transcript is not None,
+                    "transcript": transcript or "",
+                    **meta,
+                },
             )
         )
 

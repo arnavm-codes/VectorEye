@@ -1,3 +1,11 @@
+"""Central configuration: paths, model/backend selection, and tuned constants.
+
+Every value here is read from an environment variable (via .env) where it's
+meant to be deployment-tunable, or hardcoded where it's a project-specific
+constant derived empirically (see inline comments and the vault note for
+how each was chosen).
+"""
+
 import os
 from pathlib import Path
 
@@ -55,3 +63,21 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 # starting point, not a universally-tuned constant, until tested against
 # more varied footage.
 MIN_SIMILARITY_SCORE = float(os.environ.get("MIN_SIMILARITY_SCORE", "0.237"))
+
+# Speech-content search: VAD-gated Whisper transcription of each clip's
+# audio, embedded separately from the visual CLIP vector and fused with it
+# at query time (see vault note "Feasibility study" entry, 2026-09-03).
+# Disableable since it adds real per-clip indexing cost (transcription) that
+# not every deployment needs.
+ENABLE_AUDIO_SEARCH = os.environ.get("ENABLE_AUDIO_SEARCH", "true").lower() == "true"
+WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny")
+# Below this many characters, a transcript is treated as VAD noise/silence
+# rather than real speech (Whisper can hallucinate a short filler phrase on
+# near-silent audio even with vad_filter=True).
+MIN_TRANSCRIPT_CHARS = 3
+
+# Separate from CLIP: CLIP's text encoder is tuned for image-caption
+# alignment, not general sentence semantics, so transcript text needs its
+# own embedding model/vector space (confirmed in the feasibility study).
+TRANSCRIPT_EMBED_MODEL = "all-MiniLM-L6-v2"
+TRANSCRIPT_EMBED_DIM = 384

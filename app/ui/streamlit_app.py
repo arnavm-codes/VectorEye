@@ -18,16 +18,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import streamlit as st
 
-from app.config import GROQ_API_KEY, QDRANT_COLLECTION
+from app.config import ENABLE_AUDIO_SEARCH, GROQ_API_KEY, QDRANT_COLLECTION
 
 st.set_page_config(page_title="Video Library RAG (POC)", page_icon="🎥", layout="wide")
 
 
-@st.cache_resource(show_spinner="Loading embedding model (first run only, then cached)...")
-def _warm_model():
-    from app.pipeline.embedder import _load_model
-    _load_model()
+@st.cache_resource(show_spinner="Loading models (first run only, then cached for this session)...")
+def _warm_models():
+    """Loads all search-time models up front instead of lazily on first
+    query, so the first search a user runs isn't the one that eats a ~15-17s
+    model-load stall (the sentence-transformer used for transcript search is
+    the slow one -- see vault note's performance measurements, 2026-09-03).
+    Cached via st.cache_resource, so this only actually runs once per
+    Streamlit server process, however many browser sessions connect to it.
+    """
+    from app.pipeline.embedder import _load_model as load_visual_model
+
+    load_visual_model()
+
+    if ENABLE_AUDIO_SEARCH:
+        from app.pipeline.text_embedder import _load_model as load_text_embed_model
+
+        load_text_embed_model()
+        # Whisper is indexing-only (never called during search), so it isn't
+        # warmed here -- pre-loading it wouldn't speed up anything a user of
+        # this UI actually does.
+
     return True
+
+
+_warm_models()
 
 
 def _qdrant_status() -> tuple[bool, str]:
@@ -81,6 +101,18 @@ with st.sidebar:
     if not GROQ_API_KEY:
         st.caption("Set GROQ_API_KEY in .env to enable chat mode.")
 
+    use_transcript_fusion = st.toggle(
+        "Fuse in speech content (experimental)",
+        value=False,
+        disabled=not ENABLE_AUDIO_SEARCH,
+        help="Combines the visual CLIP ranking with a ranking over clips' "
+        "transcribed speech (Reciprocal Rank Fusion), for queries about "
+        "what was said rather than what's visible. Only affects clips "
+        "where speech was detected during indexing.",
+    )
+    if not ENABLE_AUDIO_SEARCH:
+        st.caption("Set ENABLE_AUDIO_SEARCH=true and re-index to enable this.")
+
 query = st.text_input(
     "Search query",
     placeholder='e.g. "a blue car waiting at the gate"',
@@ -88,8 +120,6 @@ query = st.text_input(
 run_search = st.button("Search", type="primary", disabled=not ready)
 
 if run_search and query.strip():
-    _warm_model()
-
     from app.api.search import search_clips
 
     search_query = query
@@ -103,7 +133,12 @@ if run_search and query.strip():
         st.caption(f"Searched as: _{search_query}_")
 
     with st.spinner("Searching..."):
-        results = search_clips(search_query, top_k=top_k, camera_id=camera_filter)
+        results = search_clips(
+            search_query,
+            top_k=top_k,
+            camera_id=camera_filter,
+            use_transcript_fusion=use_transcript_fusion,
+        )
 
     if use_chat_mode:
         with st.spinner("Summarizing with Groq..."):
@@ -122,4 +157,6 @@ if run_search and query.strip():
                     st.metric("Similarity score", f"{r['score']:.3f}")
                     st.write(f"**Camera:** {r['camera_id']}")
                     st.write(f"**Time range:** {r['start_ts']}s - {r['end_ts']}s")
+                    if r.get("has_speech"):
+                        st.write(f"**Transcript:** _{r['transcript']}_")
                     st.caption(r["clip_path"])
