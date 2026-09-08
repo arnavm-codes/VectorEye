@@ -38,6 +38,11 @@ or a personal video archive for "the dog running on the beach."
   embedded separately with `sentence-transformers` (`all-MiniLM-L6-v2`) and
   fused with the visual ranking at query time via Qdrant's native
   Reciprocal Rank Fusion — see "Speech-content search" below
+- **Attribute verification (optional, experimental)**: an open-vocabulary
+  object detector (`ultralytics` YOLO-World) plus a spaCy dependency parse
+  fix CLIP's weak attribute-object binding (e.g. "blue car" scored as
+  "blue" + "car" independently rather than as one bound concept) — see
+  "Attribute verification" below
 - **Vector DB**: Qdrant (self-hosted via Docker)
 - **API**: FastAPI (`/search` — raw retrieval, `/chat` — Groq-wrapped)
 - **Chat**: Groq free-tier API, query-side only
@@ -107,6 +112,52 @@ equivalent, but the words are right there in the audio).
   runs ~15% slower than visual-only. All models load lazily and are cached
   for the life of the process — the Streamlit UI pre-warms them at startup
   so the first search a user runs isn't the one that pays the load cost.
+
+## Attribute verification (optional, experimental)
+
+CLIP's global embedding doesn't reliably *bind* an attribute to the object
+it describes once text and image are compared cross-modally — a query like
+"blue car" can effectively get scored as "contains blue" + "contains car"
+independently, so an unrelated blue object plus a differently-colored car
+can outscore an actual blue car. This is a documented limitation of CLIP's
+architecture, not a bug specific to this project.
+
+Rather than trying to repair CLIP's embedding, VectorEye sidesteps the
+problem structurally:
+
+1. The query is parsed with spaCy for an `(attribute, object)` pair via its
+   adjectival-modifier dependency (e.g. "find clips with blue cars" →
+   `("blue", "car")`). Queries with no such pair skip this feature entirely
+   and use plain CLIP search.
+2. The normal CLIP visual search runs first and produces a candidate pool
+   (`ATTRIBUTE_VERIFICATION_POOL`, default 10).
+3. For each candidate clip, an open-vocabulary object detector (YOLO-World)
+   localizes the object noun in a sparse sample of frames
+   (`ATTRIBUTE_VERIFICATION_FRAMES`, default 3) — then the attribute is
+   verified with CLIP *only on that crop*, where there's just one concept
+   in play, so CLIP's binding weakness doesn't come into play. If the
+   object is never detected in any frame (e.g. an unusual noun phrasing the
+   detector's vocabulary doesn't recognize), it falls back to a whole-frame
+   CLIP score rather than treating the object as absent.
+4. The pool is re-ranked by attribute score and truncated to `top_k`.
+
+**Controlled by** `ENABLE_ATTRIBUTE_VERIFICATION` (default `false`) in
+`.env`/`app/config.py`, or pass `verify_attributes=True` to `search_clips()`
+directly. In the Streamlit UI, toggle "Verify attributes... (experimental,
+slow)" in the sidebar.
+
+**Cost — this is genuinely slow, not a minor overhead.** It's real added
+per-query latency (detector inference + a CLIP call per detected box, on
+every candidate clip), not a one-time indexing cost like everything else in
+this pipeline. Benchmarked on CPU across the three YOLO-World-v2 sizes:
+`yolov8s-worldv2.pt` (small) is fastest,
+but manual testing found `yolov8l-worldv2.pt` (large, the current default)
+gave meaningfully better result quality at real-world query latencies
+comparable to the medium size — so despite being the largest of the three
+detector sizes tried, it's the current default. Expect single-digit to
+tens-of-seconds added latency per query depending on pool size and hardware
+— **off by default, opt-in, and labeled experimental in the UI** for exactly
+this reason.
 
 ## Serve the API
 

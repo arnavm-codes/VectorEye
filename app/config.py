@@ -81,3 +81,35 @@ MIN_TRANSCRIPT_CHARS = 3
 # own embedding model/vector space (confirmed in the feasibility study).
 TRANSCRIPT_EMBED_MODEL = "all-MiniLM-L6-v2"
 TRANSCRIPT_EMBED_DIM = 384
+
+# Attribute-binding fix (see vault note "Attribute-binding / bag-of-words
+# retrieval failure", 2026-09-08): CLIP's global embedding doesn't reliably
+# bind an attribute (e.g. "blue") to the object it describes (e.g. "car")
+# once compared cross-modally, so a query like "blue car" can be scored as
+# "contains blue" + "contains car" independently. Rather than trying to
+# repair CLIP's embedding, an open-vocabulary detector (YOLO-World, chosen
+# over Grounding DINO/OWLv2/YOLOE for its speed/size/accuracy balance on
+# common-object categories -- see vault note's comparison table) localizes
+# the object noun first, then the attribute is verified with CLIP only on
+# that crop, where there's just one concept in play. Only runs on the
+# candidate pool that already cleared the normal CLIP shortlist, since it's
+# real per-clip cost (frame extraction + detection + a CLIP call per box).
+ENABLE_ATTRIBUTE_VERIFICATION = (
+    os.environ.get("ENABLE_ATTRIBUTE_VERIFICATION", "false").lower() == "true"
+)
+# "l" (large) -- slowest of the three benchmarked sizes (see vault note,
+# 2026-09-08), but real manual UI testing found M's result quality better
+# than S's, so L is being tried next to see if quality keeps improving with
+# size (at a further latency cost) before settling on a default.
+YOLO_WORLD_MODEL = os.environ.get("YOLO_WORLD_MODEL", "yolov8l-worldv2.pt")
+# How many top visual-search hits get re-ranked by attribute verification.
+# Larger = more thorough but more per-query detector/CLIP calls.
+ATTRIBUTE_VERIFICATION_POOL = int(os.environ.get("ATTRIBUTE_VERIFICATION_POOL", "10"))
+# Frames sampled per clip *for this step only* -- deliberately sparser than
+# FRAMES_PER_CLIP (used at indexing time to build a clip's search embedding):
+# verification only needs to confirm the object/attribute appears somewhere
+# in the clip, not characterize the whole clip the way the indexed embedding
+# does, and this runs at query time (real per-query latency) rather than
+# once at indexing time. See vault note's per-frame benchmark for why this
+# was the larger lever versus detector size alone.
+ATTRIBUTE_VERIFICATION_FRAMES = int(os.environ.get("ATTRIBUTE_VERIFICATION_FRAMES", "3"))

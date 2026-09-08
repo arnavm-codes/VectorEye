@@ -103,3 +103,15 @@ def embed_text(query: str) -> np.ndarray:
         text_embed = model.encode_text(tokens)
         text_embed = text_embed / text_embed.norm(dim=-1, keepdim=True)
     return text_embed[0].cpu().numpy()
+
+
+def embed_image(image: Image.Image) -> np.ndarray:
+    """Embeds a single PIL image (e.g. a detector's crop, see
+    app.pipeline.object_verifier) into the same CLIP space as embed_clip().
+    """
+    model, preprocess, _ = _load_model()
+    image_tensor = preprocess(image).unsqueeze(0).to(_device)
+    with torch.no_grad():
+        image_embed = model.encode_image(image_tensor)
+        image_embed = image_embed / image_embed.norm(dim=-1, keepdim=True)
+    return image_embed[0].cpu().numpy()
