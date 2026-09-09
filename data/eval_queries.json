@@ -1,4 +1,66 @@
 {
   "_readme": "Ground truth for retrieval eval. Each entry: 'query' (natural-language search text) and 'relevant_clips' (ground-truth-correct clip filenames, not full paths -- hand-label these by watching the actual source footage once the 3 POC videos are indexed). Currently empty -- app/eval/ragas_eval.py will report 'no eval queries defined' until this is filled in.",
-  "queries": []
+  "queries": [
+    {
+      "query": "Find clips with blue cars.",
+      "relevant_clips": [
+        "2026-09-01_clip000000.mp4",
+        "2026-09-01_clip000005.mp4",
+        "2026-09-01_clip000010.mp4"
+      ]
+    },
+    {
+      "query": "Is there any clip with Black SUV exiting through society gate?",
+      "relevant_clips": [
+        "2026-09-01_clip000020.mp4"
+      ]
+    },
+    {
+      "query": "Find clip where people are fighting.",
+      "relevant_clips": [
+        "2026-09-01_clip000010.mp4",
+        "2026-09-01_clip000015.mp4"
+      ]
+    },
+    {
+      "query": "Find clip where people are shouting what the hell",
+      "relevant_clips": [
+        "2026-09-01_clip000010.mp4"
+      ]
+    },
+    {
+      "query": "Is there a clip with Lifestyle shop?",
+      "relevant_clips": [
+        "2026-07-29_clip000000.mp4"
+      ]
+    },
+    {
+      "query": "Is there anyone with red shirt walking around?",
+      "relevant_clips": [
+        "2026-07-29_clip000000.mp4",
+        "2026-07-29_clip000005.mp4",
+        "2026-07-29_clip000010.mp4"
+      ]
+    },
+    {
+      "query": "Can you see clips with only scooters",
+      "relevant_clips": [
+        "2026-09-01_clip000015.mp4",
+        "2026-09-01_clip000010.mp4",
+        "2026-09-01_clip000005.mp4",
+        "2026-09-01_clip000000.mp4"
+      ]
+    },
+    {
+      "query": "Find all people in white shirt",
+      "relevant_clips": [
+        "2026-09-01_clip000015.mp4",
+        "2026-07-29_clip000020.mp4",
+        "2026-07-29_clip000015.mp4",
+        "2026-07-29_clip000010.mp4",
+        "2026-07-29_clip000005.mp4",
+        "2026-07-29_clip000000.mp4"
+      ]
+    }
+  ]
 }

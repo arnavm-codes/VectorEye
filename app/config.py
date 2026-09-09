@@ -82,6 +82,16 @@ MIN_TRANSCRIPT_CHARS = 3
 TRANSCRIPT_EMBED_MODEL = "all-MiniLM-L6-v2"
 TRANSCRIPT_EMBED_DIM = 384
 
+# Score threshold for the transcript branch of fusion search, gating out weak
+# candidates the same way MIN_SIMILARITY_SCORE does for the visual branch.
+# Derived 2026-09-09 by probing real query scores against this project's
+# speech-bearing clips: true matches scored 0.29-0.66, off-topic/false
+# matches (including a control query with no speech relevance) scored
+# 0.005-0.18, with a boundary-case transcript fragment at 0.163 -- 0.2 sits
+# in the gap. Same caveat as MIN_SIMILARITY_SCORE: validated on this
+# project's two source videos only, not a universally-tuned constant.
+MIN_TRANSCRIPT_SCORE = float(os.environ.get("MIN_TRANSCRIPT_SCORE", "0.2"))
+
 # Attribute-binding fix (see vault note "Attribute-binding / bag-of-words
 # retrieval failure", 2026-09-08): CLIP's global embedding doesn't reliably
 # bind an attribute (e.g. "blue") to the object it describes (e.g. "car")

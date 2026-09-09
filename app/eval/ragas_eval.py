@@ -34,7 +34,7 @@ def load_eval_queries() -> list[dict]:
     return data.get("queries", [])
 
 
-def run_eval(top_k: int = 5) -> list[dict]:
+def run_eval(top_k: int = 5, use_transcript_fusion: bool = False) -> list[dict]:
     warnings.filterwarnings("ignore", category=DeprecationWarning, message="Importing.*ragas.metrics.*deprecated")
     from ragas import SingleTurnSample
     from ragas.metrics import IDBasedContextPrecision, IDBasedContextRecall
@@ -52,7 +52,7 @@ def run_eval(top_k: int = 5) -> list[dict]:
 
     rows = []
     for item in queries:
-        results = search_clips(item["query"], top_k=top_k)
+        results = search_clips(item["query"], top_k=top_k, use_transcript_fusion=use_transcript_fusion)
         retrieved_ids = [Path(r["clip_path"]).name for r in results]
 
         sample = SingleTurnSample(
@@ -95,4 +95,8 @@ def print_report(rows: list[dict]):
 
 
 if __name__ == "__main__":
-    print_report(run_eval())
+    import sys
+
+    fusion = "--fusion" in sys.argv
+    print(f"=== Mode: {'transcript fusion' if fusion else 'visual only'} ===")
+    print_report(run_eval(use_transcript_fusion=fusion))

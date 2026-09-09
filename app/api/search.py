@@ -14,6 +14,7 @@ from app.config import (
     ATTRIBUTE_VERIFICATION_POOL,
     ENABLE_ATTRIBUTE_VERIFICATION,
     MIN_SIMILARITY_SCORE,
+    MIN_TRANSCRIPT_SCORE,
     QDRANT_COLLECTION,
 )
 from app.pipeline.embedder import embed_text, sample_frames
@@ -95,14 +96,11 @@ def search_clips(
     else:
         # Transcript fusion: combine the visual ranking with a ranking over
         # the (much smaller) set of clips that have a transcript, via
-        # Reciprocal Rank Fusion. Only the visual branch gets
-        # MIN_SIMILARITY_SCORE applied -- the transcript-embedding score
-        # scale has never been calibrated (see
-        # app.config.TRANSCRIPT_EMBED_MODEL), so gating it on an unproven
-        # threshold would risk silently dropping the one signal this
-        # feature exists to add. RRF only uses rank, not raw score, so an
-        # uncalibrated scale doesn't distort the fused result the way a bad
-        # threshold would.
+        # Reciprocal Rank Fusion. Both branches are gated by their own
+        # calibrated threshold (MIN_SIMILARITY_SCORE / MIN_TRANSCRIPT_SCORE)
+        # -- ungating the transcript branch (the original design) measurably
+        # hurt precision by letting weak/off-topic transcript matches into
+        # the fused ranking (see eval results, 2026-09-09).
         from app.pipeline.text_embedder import embed_transcript_text
 
         transcript_vector = embed_transcript_text(query)
@@ -130,6 +128,7 @@ def search_clips(
                     query=transcript_vector.tolist(),
                     using="transcript",
                     filter=Filter(must=speech_filter_conditions),
+                    score_threshold=MIN_TRANSCRIPT_SCORE,
                     limit=candidate_pool,
                 ),
             ],
