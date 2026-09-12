@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import streamlit as st
 
-from app.config import ENABLE_AUDIO_SEARCH, GROQ_API_KEY, QDRANT_COLLECTION
+from app.config import ENABLE_ATTRIBUTE_VERIFICATION, ENABLE_AUDIO_SEARCH, GROQ_API_KEY, QDRANT_COLLECTION
 
 st.set_page_config(page_title="Video Library RAG (POC)", page_icon="🎥", layout="wide")
 
@@ -113,6 +113,20 @@ with st.sidebar:
     if not ENABLE_AUDIO_SEARCH:
         st.caption("Set ENABLE_AUDIO_SEARCH=true and re-index to enable this.")
 
+    verify_attributes = st.toggle(
+        "Verify attributes, e.g. \"blue car\" (experimental, slow)",
+        value=ENABLE_ATTRIBUTE_VERIFICATION,
+        help="For queries with an attribute on an object (e.g. 'a blue car'), "
+        "re-ranks results by running an open-vocabulary object detector "
+        "(YOLO-World) to localize the object per clip, then verifying the "
+        "attribute with CLIP only on that crop -- works around CLIP's "
+        "own weak attribute-object binding on the full frame (see vault "
+        "note). Real added query latency: current benchmark is roughly "
+        "3-5s/candidate clip on CPU, so a full results pool can take "
+        "10-30+ seconds. First use in this session is slower still "
+        "(downloads/loads the detector).",
+    )
+
 query = st.text_input(
     "Search query",
     placeholder='e.g. "a blue car waiting at the gate"',
@@ -132,12 +146,14 @@ if run_search and query.strip():
             search_query = clean_query(query)
         st.caption(f"Searched as: _{search_query}_")
 
-    with st.spinner("Searching..."):
+    spinner_msg = "Searching..." if not verify_attributes else "Searching (attribute verification can take 10-30+ seconds)..."
+    with st.spinner(spinner_msg):
         results = search_clips(
             search_query,
             top_k=top_k,
             camera_id=camera_filter,
             use_transcript_fusion=use_transcript_fusion,
+            verify_attributes=verify_attributes,
         )
 
     if use_chat_mode:
@@ -155,6 +171,8 @@ if run_search and query.strip():
                     st.video(r["clip_path"])
                 with cols[1]:
                     st.metric("Similarity score", f"{r['score']:.3f}")
+                    if "attribute_score" in r:
+                        st.metric("Attribute-verified score", f"{r['attribute_score']:.3f}")
                     st.write(f"**Camera:** {r['camera_id']}")
                     st.write(f"**Time range:** {r['start_ts']}s - {r['end_ts']}s")
                     if r.get("has_speech"):

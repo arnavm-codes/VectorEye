@@ -40,6 +40,21 @@ done
 
 mkdir -p data/raw_videos
 
+# Attribute verification (see README) is opt-in and off by default -- only
+# pre-download its detector weights (YOLO-World + its internal CLIP text
+# encoder, ~400MB combined) if the user has actually enabled it in .env,
+# rather than forcing the download on everyone regardless of use.
+if [ -f .env ] && grep -qE '^ENABLE_ATTRIBUTE_VERIFICATION=true' .env; then
+    echo "=== ENABLE_ATTRIBUTE_VERIFICATION=true -- pre-downloading YOLO-World weights ==="
+    uv run python -c "
+from app.config import YOLO_WORLD_MODEL
+from ultralytics import YOLOWorld
+print(f'Downloading {YOLO_WORLD_MODEL}...')
+YOLOWorld(YOLO_WORLD_MODEL)
+print('Done.')
+"
+fi
+
 echo
 echo "Setup complete. Next steps:"
 echo "  1. Place source videos in data/raw_videos/ (.mp4/.mov/.mkv/.avi)"

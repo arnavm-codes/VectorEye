@@ -20,3 +20,11 @@ data/clips/*
 
 # Downloaded model checkpoints -- large binaries, re-downloadable, not committed
 data/model_cache/
+
+# YOLO-World weights (attribute-verification detector, any size -- l/m/s all
+# benchmarked, see vault note) and its internal CLIP text encoder --
+# ultralytics/its clip dependency download these to the repo root/`weights/`
+# by default; same re-downloadable-binary reasoning as above.
+yolov8*-worldv2.pt
+weights/
+

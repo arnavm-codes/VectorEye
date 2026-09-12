@@ -50,6 +50,15 @@ if !HEALTHY! == 0 (
 
 if not exist data\raw_videos mkdir data\raw_videos
 
+REM Attribute verification (see README) is opt-in and off by default -- only
+REM pre-download its detector weights (YOLO-World + its internal CLIP text
+REM encoder, ~400MB combined) if the user has actually enabled it in .env.
+findstr /r /c:"^ENABLE_ATTRIBUTE_VERIFICATION=true" .env >nul 2>&1
+if not errorlevel 1 (
+    echo === ENABLE_ATTRIBUTE_VERIFICATION=true -- pre-downloading YOLO-World weights ===
+    uv run python -c "from app.config import YOLO_WORLD_MODEL; from ultralytics import YOLOWorld; print(f'Downloading {YOLO_WORLD_MODEL}...'); YOLOWorld(YOLO_WORLD_MODEL); print('Done.')"
+)
+
 echo.
 echo Setup complete. Next steps:
 echo   1. Place source videos in data\raw_videos\ ^(.mp4/.mov/.mkv/.avi^)
