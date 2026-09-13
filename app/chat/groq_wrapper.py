@@ -49,7 +49,7 @@ def explain_results(raw_query: str, results: list[dict]) -> str:
         return "No matching clips were found for that query."
 
     lines = [
-        f"- camera {r['camera_id']}, {r['start_ts']}-{r['end_ts']}s, score {r['score']:.3f}"
+        f"- source {r['source_id']}, {r['start_ts']}-{r['end_ts']}s, score {r['score']:.3f}"
         for r in results
     ]
     response = _get_client().chat.completions.create(
@@ -63,7 +63,7 @@ def explain_results(raw_query: str, results: list[dict]) -> str:
                     "embedding matches, not confirmed content. Never assert or "
                     "imply what a clip actually shows (e.g. do not say 'this "
                     "clip shows X'). Only report the similarity scores and "
-                    "metadata (camera, time range) given, and tell the user "
+                    "metadata (source, time range) given, and tell the user "
                     "these are candidate matches to review themselves. Be brief."
                 ),
             },

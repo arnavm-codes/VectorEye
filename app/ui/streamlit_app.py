@@ -64,12 +64,12 @@ def _qdrant_status() -> tuple[bool, str]:
         return False, f"Can't reach Qdrant ({exc}). Run `docker compose up -d` first."
 
 
-def _list_camera_ids() -> list[str]:
+def _list_source_ids() -> list[str]:
     try:
         from app.pipeline.indexer import get_client
         client = get_client()
         points, _ = client.scroll(QDRANT_COLLECTION, limit=1000, with_payload=True)
-        return sorted({p.payload.get("camera_id") for p in points if p.payload.get("camera_id")})
+        return sorted({p.payload.get("source_id") for p in points if p.payload.get("source_id")})
     except Exception:
         return []
 
@@ -87,9 +87,9 @@ with st.sidebar:
     st.header("Options")
     top_k = st.slider("Results to show", min_value=1, max_value=10, value=5)
 
-    camera_ids = _list_camera_ids() if ready else []
-    camera_filter = st.selectbox("Camera filter", options=["All cameras"] + camera_ids)
-    camera_filter = None if camera_filter == "All cameras" else camera_filter
+    source_ids = _list_source_ids() if ready else []
+    source_filter = st.selectbox("Source filter", options=["All sources"] + source_ids)
+    source_filter = None if source_filter == "All sources" else source_filter
 
     use_chat_mode = st.toggle(
         "Groq chat mode (query cleanup + summary)",
@@ -151,7 +151,7 @@ if run_search and query.strip():
         results = search_clips(
             search_query,
             top_k=top_k,
-            camera_id=camera_filter,
+            source_id=source_filter,
             use_transcript_fusion=use_transcript_fusion,
             verify_attributes=verify_attributes,
         )
@@ -173,7 +173,9 @@ if run_search and query.strip():
                     st.metric("Similarity score", f"{r['score']:.3f}")
                     if "attribute_score" in r:
                         st.metric("Attribute-verified score", f"{r['attribute_score']:.3f}")
-                    st.write(f"**Camera:** {r['camera_id']}")
+                    st.write(f"**Source:** {r['source_id']}")
+                    if r.get("tags"):
+                        st.write(f"**Tags:** {', '.join(r['tags'])}")
                     st.write(f"**Time range:** {r['start_ts']}s - {r['end_ts']}s")
                     if r.get("has_speech"):
                         st.write(f"**Transcript:** _{r['transcript']}_")

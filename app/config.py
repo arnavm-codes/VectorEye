@@ -123,3 +123,47 @@ ATTRIBUTE_VERIFICATION_POOL = int(os.environ.get("ATTRIBUTE_VERIFICATION_POOL", 
 # once at indexing time. See vault note's per-frame benchmark for why this
 # was the larger lever versus detector size alone.
 ATTRIBUTE_VERIFICATION_FRAMES = int(os.environ.get("ATTRIBUTE_VERIFICATION_FRAMES", "3"))
+
+# Generic metadata layer (see vault note "Plug-and-play audit" entry,
+# 2026-09-13): every clip payload carries a required `source_id` (the
+# generic grouping key -- a camera, a course, a trip, whatever a given
+# deployment's videos are grouped by) plus two open-ended buckets: `tags`
+# (a flat list of free-form strings, e.g. "trip:japan-2024") and
+# `attributes` (a structured key/value dict, e.g. {"location": "Kyoto"}).
+# Neither bucket's keys are hardcoded in the pipeline -- a deployment just
+# starts passing whatever tags/attributes it wants at ingestion time.
+#
+# PAYLOAD_INDEX_FIELDS lists which top-level payload fields get a Qdrant
+# payload index (required for that field to be filtered/matched
+# efficiently at query time -- see qdrant_client.create_payload_index calls
+# in app/pipeline/indexer.py). `source_id` is indexed by default since
+# every deployment filters by it; a deployment that wants fast filtering on
+# a specific attribute (e.g. "attributes.location" for the personal-gallery
+# case, "attributes.course_id" for teaching video) adds it here via env var
+# rather than editing code. This is the "per-deployment schema
+# declaration" -- deliberately just a list of field paths, not a bigger
+# schema/type system, since Qdrant's payload is already schemaless JSON and
+# the only thing actually required up front is which fields need an index.
+PAYLOAD_INDEX_FIELDS = [
+    f.strip()
+    for f in os.environ.get("PAYLOAD_INDEX_FIELDS", "source_id,tags").split(",")
+    if f.strip()
+]
+
+# Default polling interval for a watch-folder worker (Phase 4 of the
+# plug-and-play effort, see vault note "Plug-and-play audit" entry,
+# 2026-09-13) -- how often it re-scans its directory for new/changed
+# videos. Overridable per-watch via POST /watch's interval_seconds.
+WATCH_POLL_INTERVAL_SECONDS = int(os.environ.get("WATCH_POLL_INTERVAL_SECONDS", "30"))
+
+# Retention sweep (Phase 5 of the plug-and-play effort, same vault note
+# entry): periodically deletes clips whose `attributes.retention_days` has
+# elapsed since indexing -- the CCTV-style rolling-window case. Off by
+# default -- this is a destructive, automatic operation, so it needs an
+# explicit deployment opt-in; a deployment that never sets retention_days
+# on anything is unaffected either way, but the automatic loop itself
+# shouldn't run without someone deciding to turn it on. POST
+# /retention/sweep (a manual, explicit trigger) is always available
+# regardless of this flag.
+ENABLE_RETENTION_SWEEP = os.environ.get("ENABLE_RETENTION_SWEEP", "false").lower() == "true"
+RETENTION_SWEEP_INTERVAL_SECONDS = int(os.environ.get("RETENTION_SWEEP_INTERVAL_SECONDS", "3600"))
