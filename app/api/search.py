@@ -1,10 +1,12 @@
 """Core retrieval: text query -> CLIP text embedding -> Qdrant similarity search.
 
 No LLM in this path -- purely nearest-neighbor over embeddings, per the
-project's core design constraint. Optionally fuses in a second signal from
-transcribed speech content (see vault note "Feasibility study" entry,
-2026-09-03) via Qdrant's native RRF fusion over two named vectors on the
-same point -- no hand-rolled fusion logic needed.
+project's core design constraint. Optionally fuses in one or more
+secondary signals -- transcribed speech content (see vault note
+"Feasibility study" entry, 2026-09-03) and/or on-screen OCR'd text (see
+vault note "OCR effort kicked off" entry, 2026-09-13) -- via Qdrant's
+native RRF fusion over named vectors on the same point, N-way, no
+hand-rolled fusion logic needed.
 """
 
 from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchAny, MatchValue, Prefetch
@@ -13,6 +15,7 @@ from app.config import (
     ATTRIBUTE_VERIFICATION_FRAMES,
     ATTRIBUTE_VERIFICATION_POOL,
     ENABLE_ATTRIBUTE_VERIFICATION,
+    MIN_OCR_SCORE,
     MIN_SIMILARITY_SCORE,
     MIN_TRANSCRIPT_SCORE,
     QDRANT_COLLECTION,
@@ -61,6 +64,8 @@ def _to_result(hit) -> dict:
         "end_ts": hit.payload.get("end_ts"),
         "has_speech": hit.payload.get("has_speech", False),
         "transcript": hit.payload.get("transcript", ""),
+        "has_text": hit.payload.get("has_text", False),
+        "ocr_text": hit.payload.get("ocr_text", ""),
         "tags": hit.payload.get("tags", []),
         "attributes": hit.payload.get("attributes", {}),
     }
@@ -90,6 +95,7 @@ def search_clips(
     source_id: str | None = None,
     filters: list[dict] | None = None,
     use_transcript_fusion: bool = False,
+    use_ocr_fusion: bool = False,
     verify_attributes: bool | None = None,
 ) -> list[dict]:
     if verify_attributes is None:
@@ -108,7 +114,7 @@ def search_clips(
     query_filter = Filter(must=base_conditions) if base_conditions else None
     visual_vector = embed_text(query)
 
-    if not use_transcript_fusion:
+    if not use_transcript_fusion and not use_ocr_fusion:
         # score_threshold drops hits below MIN_SIMILARITY_SCORE -- without
         # this, Qdrant always returns the top_k nearest points regardless of
         # how poor a match they are, so an out-of-distribution query
@@ -125,41 +131,61 @@ def search_clips(
         ).points
         results = [_to_result(h) for h in hits]
     else:
-        # Transcript fusion: combine the visual ranking with a ranking over
-        # the (much smaller) set of clips that have a transcript, via
-        # Reciprocal Rank Fusion. Both branches are gated by their own
-        # calibrated threshold (MIN_SIMILARITY_SCORE / MIN_TRANSCRIPT_SCORE)
-        # -- ungating the transcript branch (the original design) measurably
-        # hurt precision by letting weak/off-topic transcript matches into
-        # the fused ranking (see eval results, 2026-09-09).
-        from app.pipeline.text_embedder import embed_transcript_text
-
-        transcript_vector = embed_transcript_text(query)
+        # N-way fusion: combine the visual ranking with a ranking over
+        # each requested secondary signal (transcript and/or ocr_text),
+        # via Reciprocal Rank Fusion. Every branch is gated by its own
+        # calibrated threshold (MIN_SIMILARITY_SCORE / MIN_TRANSCRIPT_SCORE
+        # / MIN_OCR_SCORE) -- ungating a branch (the original transcript
+        # design) measurably hurt precision by letting weak/off-topic
+        # matches into the fused ranking (see eval results, 2026-09-09).
         candidate_pool = max(fetch_limit * 4, 20)
-
-        speech_filter_conditions = [
-            FieldCondition(key="has_speech", match=MatchValue(value=True)),
-            *base_conditions,
+        prefetches = [
+            Prefetch(
+                query=visual_vector.tolist(),
+                using="visual",
+                filter=query_filter,
+                score_threshold=MIN_SIMILARITY_SCORE,
+                limit=candidate_pool,
+            ),
         ]
 
-        hits = client.query_points(
-            collection_name=QDRANT_COLLECTION,
-            prefetch=[
+        if use_transcript_fusion:
+            from app.pipeline.text_embedder import embed_transcript_text
+
+            speech_filter_conditions = [
+                FieldCondition(key="has_speech", match=MatchValue(value=True)),
+                *base_conditions,
+            ]
+            prefetches.append(
                 Prefetch(
-                    query=visual_vector.tolist(),
-                    using="visual",
-                    filter=query_filter,
-                    score_threshold=MIN_SIMILARITY_SCORE,
-                    limit=candidate_pool,
-                ),
-                Prefetch(
-                    query=transcript_vector.tolist(),
+                    query=embed_transcript_text(query).tolist(),
                     using="transcript",
                     filter=Filter(must=speech_filter_conditions),
                     score_threshold=MIN_TRANSCRIPT_SCORE,
                     limit=candidate_pool,
-                ),
-            ],
+                )
+            )
+
+        if use_ocr_fusion:
+            from app.pipeline.text_embedder import embed_text as embed_general_text
+
+            text_filter_conditions = [
+                FieldCondition(key="has_text", match=MatchValue(value=True)),
+                *base_conditions,
+            ]
+            prefetches.append(
+                Prefetch(
+                    query=embed_general_text(query).tolist(),
+                    using="ocr_text",
+                    filter=Filter(must=text_filter_conditions),
+                    score_threshold=MIN_OCR_SCORE,
+                    limit=candidate_pool,
+                )
+            )
+
+        hits = client.query_points(
+            collection_name=QDRANT_COLLECTION,
+            prefetch=prefetches,
             query=FusionQuery(fusion=Fusion.RRF),
             limit=fetch_limit,
         ).points

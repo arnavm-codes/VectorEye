@@ -47,9 +47,23 @@ dog running on the beach."
   fix CLIP's weak attribute-object binding (e.g. "blue car" scored as
   "blue" + "car" independently rather than as one bound concept) — see
   "Attribute verification" below
+- **On-screen text search (optional)**: Tesseract (`pytesseract`, a system
+  binary — no ML framework, no GPU/CUDA risk) reads slide/whiteboard/
+  signage text from a sparse frame sample; embedded with the same
+  `sentence-transformers` model as transcripts and fused the same way — see
+  "On-screen text search (OCR)" below
 - **Vector DB**: Qdrant (self-hosted via Docker)
-- **API**: FastAPI (`/search` — raw retrieval, `/chat` — Groq-wrapped)
+- **API**: FastAPI (`/search` — raw retrieval, `/chat` — Groq-wrapped,
+  `/ingest` / `/ingest/batch` / `/watch` — ingestion, `/sources` /
+  `/retention/sweep` — visibility and cleanup)
 - **Chat**: Groq free-tier API, query-side only
+- **Model backends are swappable without touching call sites**: every
+  model-selection point in this codebase (visual embedding backend,
+  Whisper size, sentence-transformer model, YOLO-World checkpoint, OCR
+  engine) is either a single config value (swapping checkpoints/sizes) or a
+  config value behind one dispatch function with one loader per engine
+  family (swapping libraries entirely, e.g. Tesseract → PaddleOCR) — see
+  each pipeline module's `_load_*` functions.
 
 ## Architecture
 
@@ -86,9 +100,13 @@ collection.
 uv run streamlit run app/ui/streamlit_app.py
 ```
 
-Type a query, optionally toggle "Groq chat mode" (requires `GROQ_API_KEY`),
-and view the matched clips with inline playback. Talks directly to the
-retrieval code — no separate API process needed for the demo.
+Type a query and view the matched clips with inline playback. Talks
+directly to the retrieval code — no separate API process needed for the
+demo. The sidebar has a toggle for each optional feature below (each
+disabled until its `ENABLE_*` flag is on and the collection has been
+re-indexed with it): "Groq chat mode" (requires `GROQ_API_KEY`), "Fuse in
+speech content", "Fuse in on-screen text", and "Verify attributes" — the
+last three are independent and combinable.
 
 ## Speech-content search (optional)
 
@@ -116,6 +134,49 @@ equivalent, but the words are right there in the audio).
   runs ~15% slower than visual-only. All models load lazily and are cached
   for the life of the process — the Streamlit UI pre-warms them at startup
   so the first search a user runs isn't the one that pays the load cost.
+
+## On-screen text search (OCR, optional)
+
+VectorEye can also search *on-screen text* — slides, whiteboards, signage,
+timestamp overlays — the same "search a signal CLIP can't cleanly capture"
+idea as speech-content search, just for text that appears visually instead
+of being spoken.
+
+- Controlled by `ENABLE_OCR_SEARCH` (default `false`) in `.env`/`app/config.py`.
+  When on, indexing runs a sparse sample of each clip's frames
+  (`OCR_FRAMES_PER_CLIP`, default 3 — deliberately sparser than the visual
+  embedding's frame sample, since on-screen text is typically static across
+  many consecutive frames) through OCR; text found is deduplicated across
+  frames (same text seen in consecutive frames isn't repeated) and stored,
+  same as `has_speech`/`transcript` but as `has_text`/`ocr_text`.
+- OCR engine is picked by `OCR_BACKEND` (default `"tesseract"`) — Tesseract
+  needs the `tesseract-ocr` **system package** installed separately (not a
+  pip dependency; `pytesseract` is only a thin wrapper around the binary —
+  `sudo apt install tesseract-ocr` on Debian/Ubuntu, `brew install
+  tesseract` on macOS). Chosen specifically because it has no ML-framework
+  dependency at all — no CUDA/torch risk, ~10MB, sub-second per frame — at
+  the cost of weaker accuracy on small/distorted text (a CCTV camera-ID
+  overlay reads noisier than a clean lecture slide, but the signal usually
+  still comes through — see the vault note's engine comparison for the
+  full tradeoff and the documented PaddleOCR fallback if accuracy proves
+  insufficient for a given deployment's footage).
+- OCR'd text is embedded with the same `sentence-transformers` model as
+  transcripts (general text, not CLIP's caption-tuned text encoder — same
+  reasoning as speech-content search), into its own named Qdrant vector
+  (`ocr_text`) — a separate signal from `transcript` even though they share
+  an embedding model.
+- At query time, pass `use_ocr_fusion=True` to `search_clips()` (or the
+  `"use_ocr_fusion": true` field on `POST /search`, or toggle "Fuse in
+  on-screen text" in the Streamlit UI) to combine the visual ranking with
+  the `ocr_text` ranking via RRF — combinable with `use_transcript_fusion`
+  at the same time for a 3-way fusion across visual, speech, and on-screen
+  text. Off by default, same opt-in reasoning as transcript fusion.
+- **Engine is swappable without touching any other code**: `OCR_BACKEND`
+  picks the engine family (see `app/pipeline/ocr.py`'s `_load_*`
+  functions) — adding a second engine (e.g. PaddleOCR, the documented
+  fallback) means adding one loader function and one dispatch branch, with
+  zero changes anywhere else in the codebase. This is the same pattern
+  every swappable model in this project follows — see "Stack" above.
 
 ## Attribute verification (optional, experimental)
 
@@ -282,6 +343,18 @@ curl -X POST localhost:8000/search -H "Content-Type: application/json" -d '{
 ```
 
 `op` is `"eq"` (exact match) or `"in"` (matches any value in a list).
+
+Fold in speech content or on-screen text (both opt-in, both need indexing
+with `ENABLE_AUDIO_SEARCH`/`ENABLE_OCR_SEARCH` on to have anything to fuse
+in — see their sections above) with `"use_transcript_fusion": true` and/or
+`"use_ocr_fusion": true` — combinable together for a 3-way fusion:
+
+```bash
+curl -X POST localhost:8000/search -H "Content-Type: application/json" -d '{
+  "query": "what did the sign say at the gate",
+  "use_ocr_fusion": true
+}'
+```
 
 Want a conversational answer instead of raw hits? Use `/chat` (needs
 `GROQ_API_KEY` in `.env`) — same retrieval underneath, just narrated:

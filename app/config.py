@@ -43,12 +43,22 @@ LONGCLIP_EMBED_DIM = 512  # LongCLIP-B is ViT-B/16-based, same dim as baseline
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
 
+# Fails loudly on an unrecognized EMBEDDING_BACKEND instead of silently
+# falling back to the default -- found as a real gap during the OCR
+# backend-architecture planning (see vault note "OCR effort kicked off"
+# entry, 2026-09-13): the old code (`if == "longclip": ... else: ...`)
+# treated any unrecognized value, including a typo, as "clip" with no
+# error. This is now the house convention for every model with a
+# family-switching backend (see app.pipeline.embedder._load_model() and
+# app.pipeline.ocr's dispatch, which both fail the same way).
 if EMBEDDING_BACKEND == "longclip":
     QDRANT_COLLECTION = "video_clips_longclip"
     CLIP_EMBED_DIM = LONGCLIP_EMBED_DIM
-else:
+elif EMBEDDING_BACKEND == "clip":
     QDRANT_COLLECTION = "video_clips"
     CLIP_EMBED_DIM = 512  # ViT-B-32 output dim
+else:
+    raise ValueError(f"Unrecognized EMBEDDING_BACKEND {EMBEDDING_BACKEND!r} (expected 'clip' or 'longclip')")
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
@@ -167,3 +177,33 @@ WATCH_POLL_INTERVAL_SECONDS = int(os.environ.get("WATCH_POLL_INTERVAL_SECONDS", 
 # regardless of this flag.
 ENABLE_RETENTION_SWEEP = os.environ.get("ENABLE_RETENTION_SWEEP", "false").lower() == "true"
 RETENTION_SWEEP_INTERVAL_SECONDS = int(os.environ.get("RETENTION_SWEEP_INTERVAL_SECONDS", "3600"))
+
+# On-screen text search (OCR) -- same additive/config-gated/off-by-default
+# pattern as speech-content search (ENABLE_AUDIO_SEARCH above): an
+# independent named vector fused in via RRF at query time, aimed mainly at
+# slide/whiteboard-heavy content (see vault note "OCR effort kicked off"
+# entry, 2026-09-13, for the engine comparison behind this default).
+ENABLE_OCR_SEARCH = os.environ.get("ENABLE_OCR_SEARCH", "false").lower() == "true"
+# "tesseract" (default) -- Apache 2.0, no ML-framework dependency at all,
+# sidesteps the torch/CUDA-pull risk category entirely rather than needing
+# another careful CPU-only pin. Documented fallback if real-footage testing
+# shows this isn't accurate enough for small/distorted CCTV-style text:
+# "paddleocr" (Apache 2.0, still lightweight at its small tier, better
+# scene-text accuracy, at the cost of a second ML framework to vet) -- not
+# implemented yet, addable later as a pure addition with zero call-site
+# changes (see app.pipeline.ocr's backend dispatch).
+OCR_BACKEND = os.environ.get("OCR_BACKEND", "tesseract")
+# Frames sampled per clip for OCR -- separate from FRAMES_PER_CLIP (used
+# for the visual embedding): on-screen text is typically static across many
+# consecutive frames (a slide held for several seconds), so a sparser
+# sample is enough to catch it, same reasoning as
+# ATTRIBUTE_VERIFICATION_FRAMES's sparser sampling for that feature.
+OCR_FRAMES_PER_CLIP = int(os.environ.get("OCR_FRAMES_PER_CLIP", "3"))
+# Same role as MIN_TRANSCRIPT_SCORE for the transcript fusion branch --
+# gates weak/off-topic ocr_text matches out of the fused ranking. Starting
+# at the same 0.2 value as MIN_TRANSCRIPT_SCORE since both branches embed
+# with the same sentence-transformer model into the same kind of vector
+# space -- explicitly a starting point pending real calibration against
+# real OCR'd text, same caveat as every other empirically-derived threshold
+# in this file.
+MIN_OCR_SCORE = float(os.environ.get("MIN_OCR_SCORE", "0.2"))
