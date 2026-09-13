@@ -34,35 +34,23 @@ dog running on the beach."
 
 ## Stack
 
-- **Chunking**: FFmpeg (fixed-length, overlapping segments — configurable)
-- **Visual embedding**: CLIP (`open_clip`, `ViT-B-32`/openai weights, or a
-  Long-CLIP backend), sparse frame sampling + max-pool per clip
-- **Speech-content search (optional, `ENABLE_AUDIO_SEARCH`)**: `faster-whisper`
-  (`tiny`, CPU) with its built-in VAD skips clips with no detected speech;
-  transcripts are embedded separately with `sentence-transformers`
-  (`all-MiniLM-L6-v2`) and fused with the visual ranking at query time via
-  Qdrant's native Reciprocal Rank Fusion (`use_transcript_fusion`)
-- **Attribute verification (optional, experimental, `ENABLE_ATTRIBUTE_VERIFICATION`)**:
-  an open-vocabulary object detector (`ultralytics` YOLO-World) plus a spaCy
-  dependency parse fix CLIP's weak attribute-object binding (e.g. "blue car"
-  scored as "blue" + "car" independently rather than as one bound concept)
-- **On-screen text search (optional, `ENABLE_OCR_SEARCH`)**: Tesseract
-  (`pytesseract`, a system binary — no ML framework, no GPU/CUDA risk) reads
-  slide/whiteboard/signage text from a sparse frame sample; embedded with the
-  same `sentence-transformers` model as transcripts and fused the same way
-  (`use_ocr_fusion`)
-- **Vector DB**: Qdrant (self-hosted via Docker)
-- **API**: FastAPI (`/search` — raw retrieval, `/chat` — Groq-wrapped,
-  `/ingest` / `/ingest/batch` / `/watch` — ingestion, `/sources` /
-  `/retention/sweep` — visibility and cleanup)
-- **Chat**: Groq free-tier API, query-side only
-- **Model backends are swappable without touching call sites**: every
-  model-selection point in this codebase (visual embedding backend,
-  Whisper size, sentence-transformer model, YOLO-World checkpoint, OCR
-  engine) is either a single config value (swapping checkpoints/sizes) or a
-  config value behind one dispatch function with one loader per engine
-  family (swapping libraries entirely, e.g. Tesseract → PaddleOCR) — see
-  each pipeline module's `_load_*` functions.
+| Layer | Tech | Opt-in? | Config |
+|---|---|---|---|
+| Chunking | FFmpeg — fixed-length, overlapping segments | always on | configurable |
+| Visual embedding | CLIP (`open_clip`, `ViT-B-32`/openai, or Long-CLIP) — sparse frame sampling + max-pool | always on | `EMBEDDING_BACKEND` |
+| Speech-content search | `faster-whisper` (`tiny`, CPU, built-in VAD) + `sentence-transformers` (`all-MiniLM-L6-v2`), fused via Qdrant's native RRF | opt-in | `ENABLE_AUDIO_SEARCH`, `use_transcript_fusion` |
+| On-screen text search (OCR) | Tesseract (`pytesseract`, system binary — no ML framework, no GPU/CUDA risk) + same sentence-transformer as above | opt-in | `ENABLE_OCR_SEARCH`, `use_ocr_fusion` |
+| Attribute verification | Open-vocab object detector (`ultralytics` YOLO-World) + spaCy dependency parse — fixes CLIP's weak attribute-object binding (e.g. "blue car" scored as "blue" + "car" independently) | opt-in, experimental | `ENABLE_ATTRIBUTE_VERIFICATION` |
+| Vector DB | Qdrant, self-hosted via Docker | always on | — |
+| API | FastAPI — `/search`, `/chat`, `/ingest`, `/ingest/batch`, `/watch`, `/sources`, `/retention/sweep` | always on | — |
+| Chat | Groq free-tier API, query-side only | opt-in | `GROQ_API_KEY` |
+
+Every model-selection point above is either a single config value (swapping
+checkpoints/sizes within a library) or a config value behind one dispatch
+function with one loader per engine family (swapping libraries entirely,
+e.g. Tesseract → PaddleOCR) — see each pipeline module's `_load_*`
+functions. This means every backend in the table can be swapped without
+touching any call site.
 
 ## Architecture
 
