@@ -22,11 +22,15 @@ to clean up the user's query text and narrate results, never to look at
 footage.
 
 The system doesn't assume anything domain-specific about the source
-footage — clips are grouped under a generic `camera_id` (in practice: a
+footage — clips are grouped under a generic `source_id` (in practice: a
 source video, a camera feed, a recording device, or whatever identifier
-makes sense for your library) with optional filtering, so the same pipeline
-works whether you're searching CCTV recordings for "a red car at the gate"
-or a personal video archive for "the dog running on the beach."
+makes sense for your library) with optional filtering, plus open-ended
+`tags` (a flat list of labels) and `attributes` (a structured key/value
+dict) for anything else a deployment wants to track — a trip name and
+location, a course and lecture number, a camera site — none of it hardcoded
+into the pipeline. So the same pipeline works whether you're searching CCTV
+recordings for "a red car at the gate" or a personal video archive for "the
+dog running on the beach."
 
 ## Stack
 
@@ -159,17 +163,160 @@ tens-of-seconds added latency per query depending on pool size and hardware
 — **off by default, opt-in, and labeled experimental in the UI** for exactly
 this reason.
 
-## Serve the API
+## How to use the API
+
+This section walks through setup and every endpoint with copy-pasteable
+`curl` commands. Everything below assumes Qdrant is running
+(`docker compose up -d`) and the API server is up:
 
 ```bash
-uv run uvicorn app.main:app --reload
+uv sync
+cp .env.example .env          # fill in GROQ_API_KEY if you want /chat
+docker compose up -d          # starts Qdrant on localhost:6333
+uv run uvicorn app.main:app --reload   # starts the API on localhost:8000
 ```
 
-- `POST /search {"query": "blue car at the gate"}` — raw CLIP+Qdrant
-  retrieval, no LLM involved.
-- `POST /chat {"query": "..."}` — same retrieval, wrapped with Groq for
-  query cleanup + a conversational summary of results.
-- `GET /clip/{filename}` — serves a matched clip file for playback.
+Check it's alive:
+
+```bash
+curl localhost:8000/health
+# {"status": "ok"}
+```
+
+### 1. Get video into the system (ingestion)
+
+Unlike the old `scripts/run_pipeline.py` CLI script (still works, for a
+one-time bulk load from `data/raw_videos/`), the API lets you add video
+one at a time, in bulk, or continuously — without re-processing what's
+already indexed.
+
+**One video at a time** — point at any video file already on the server's
+disk, give it a `source_id` (whatever grouping makes sense for your
+library: a camera name, a trip, a course), and optionally `tags`/`attributes`:
+
+```bash
+curl -X POST localhost:8000/ingest -H "Content-Type: application/json" -d '{
+  "video_path": "/path/to/video.mp4",
+  "source_id": "front-gate-camera",
+  "tags": ["site:hq"],
+  "attributes": {"location": "Kyoto"}
+}'
+# {"job_id": "..."}
+```
+
+Chunking + embedding takes real time (seconds to minutes depending on
+video length), so this returns immediately with a `job_id`. Poll it for
+progress:
+
+```bash
+curl localhost:8000/ingest/<job_id>
+# {"status": "embedding_indexing", ...}   -> then "done" or "failed"
+```
+
+A video that's already been ingested and hasn't changed since is
+automatically **skipped** (status `"skipped"`) instead of re-processed —
+add `"force": true` to the request body to re-process it anyway.
+
+**A whole folder of videos at once** — for a static archive (a batch of
+teaching videos, an existing folder of trip footage). Point at a directory
+and every video in it gets its own ingest job, each with its own
+filename-derived `source_id` unless you give one explicitly per file:
+
+```bash
+curl -X POST localhost:8000/ingest/batch -H "Content-Type: application/json" -d '{
+  "directory": "/path/to/videos",
+  "tags": ["archive:2024"]
+}'
+# {"batch_id": "...", "job_ids": [...]}
+
+curl localhost:8000/ingest/batch/<batch_id>
+# shows every job's status plus one overall status: "running" / "done" / "failed"
+```
+
+(Or pass an explicit `"videos": [{"video_path": "...", "source_id": "..."}, ...]`
+list instead of `"directory"` if each video needs its own metadata.)
+
+**A folder that keeps getting new files** — for a live source like a CCTV
+NVR export directory. Register it once and it's watched automatically:
+
+```bash
+curl -X POST localhost:8000/watch -H "Content-Type: application/json" -d '{
+  "directory": "/path/to/nvr-export",
+  "tags": ["camera:lobby"],
+  "interval_seconds": 30
+}'
+# {"watch_id": "..."}
+```
+
+Every 30 seconds it checks the folder for new or changed files and
+auto-ingests them — already-processed, unchanged files are skipped, so
+re-checking a mostly-unchanged folder is cheap.
+
+```bash
+curl localhost:8000/watch/<watch_id>       # status + list of jobs it triggered
+curl localhost:8000/watch                  # list every registered watch
+curl -X DELETE localhost:8000/watch/<watch_id>   # stop watching
+```
+
+### 2. Search
+
+```bash
+curl -X POST localhost:8000/search -H "Content-Type: application/json" -d '{
+  "query": "blue car at the gate",
+  "top_k": 5
+}'
+```
+
+Raw CLIP+Qdrant retrieval, no LLM involved. Narrow it down with
+`"source_id": "front-gate-camera"` (match one source), or a more general
+`"filters"` list for anything in `tags`/`attributes`:
+
+```bash
+curl -X POST localhost:8000/search -H "Content-Type: application/json" -d '{
+  "query": "blue car at the gate",
+  "filters": [
+    {"field": "tags", "op": "eq", "value": "site:hq"},
+    {"field": "attributes.location", "op": "in", "value": ["Kyoto", "Osaka"]}
+  ]
+}'
+```
+
+`op` is `"eq"` (exact match) or `"in"` (matches any value in a list).
+
+Want a conversational answer instead of raw hits? Use `/chat` (needs
+`GROQ_API_KEY` in `.env`) — same retrieval underneath, just narrated:
+
+```bash
+curl -X POST localhost:8000/chat -H "Content-Type: application/json" -d '{
+  "query": "did anyone show up at the gate last night"
+}'
+```
+
+Play back a matched clip (each search result includes its `clip_path`;
+just the filename is what this endpoint wants):
+
+```bash
+curl localhost:8000/clip/front-gate-camera_clip000010.mp4 --output clip.mp4
+```
+
+### 3. See what's indexed, and clean it up
+
+```bash
+curl localhost:8000/sources               # every source_id, with clip counts
+curl localhost:8000/sources/<source_id>   # detail for one source
+curl -X DELETE localhost:8000/sources/<source_id>   # delete it (Qdrant + disk)
+```
+
+For a source that should auto-expire (a CCTV rolling window), set
+`retention_days` in its `attributes` at ingest time — anything past that
+age gets deleted automatically if you turn on the background sweep
+(`ENABLE_RETENTION_SWEEP=true` in `.env`), or trigger a sweep manually any
+time:
+
+```bash
+curl -X POST localhost:8000/retention/sweep
+# {"deleted": 12}
+```
 
 ## Retrieval evaluation (RAGAS)
 
