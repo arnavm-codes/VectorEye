@@ -18,7 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import streamlit as st
 
-from app.config import ENABLE_ATTRIBUTE_VERIFICATION, ENABLE_AUDIO_SEARCH, GROQ_API_KEY, QDRANT_COLLECTION
+from app.config import (
+    ENABLE_ATTRIBUTE_VERIFICATION,
+    ENABLE_AUDIO_SEARCH,
+    ENABLE_OCR_SEARCH,
+    GROQ_API_KEY,
+    QDRANT_COLLECTION,
+)
 
 st.set_page_config(page_title="Video Library RAG (POC)", page_icon="🎥", layout="wide")
 
@@ -36,13 +42,16 @@ def _warm_models():
 
     load_visual_model()
 
-    if ENABLE_AUDIO_SEARCH:
+    if ENABLE_AUDIO_SEARCH or ENABLE_OCR_SEARCH:
+        # Same sentence-transformer model backs both transcript and
+        # ocr_text search (see app.pipeline.text_embedder), so warming it
+        # once here covers either or both.
         from app.pipeline.text_embedder import _load_model as load_text_embed_model
 
         load_text_embed_model()
-        # Whisper is indexing-only (never called during search), so it isn't
-        # warmed here -- pre-loading it wouldn't speed up anything a user of
-        # this UI actually does.
+        # Whisper/Tesseract are indexing-only (never called during search),
+        # so neither is warmed here -- pre-loading them wouldn't speed up
+        # anything a user of this UI actually does.
 
     return True
 
@@ -113,6 +122,18 @@ with st.sidebar:
     if not ENABLE_AUDIO_SEARCH:
         st.caption("Set ENABLE_AUDIO_SEARCH=true and re-index to enable this.")
 
+    use_ocr_fusion = st.toggle(
+        "Fuse in on-screen text (experimental)",
+        value=False,
+        disabled=not ENABLE_OCR_SEARCH,
+        help="Combines the visual CLIP ranking with a ranking over clips' "
+        "OCR'd on-screen text (Reciprocal Rank Fusion) -- slides, "
+        "whiteboards, signage. Only affects clips where text was detected "
+        "during indexing.",
+    )
+    if not ENABLE_OCR_SEARCH:
+        st.caption("Set ENABLE_OCR_SEARCH=true and re-index to enable this.")
+
     verify_attributes = st.toggle(
         "Verify attributes, e.g. \"blue car\" (experimental, slow)",
         value=ENABLE_ATTRIBUTE_VERIFICATION,
@@ -153,6 +174,7 @@ if run_search and query.strip():
             top_k=top_k,
             source_id=source_filter,
             use_transcript_fusion=use_transcript_fusion,
+            use_ocr_fusion=use_ocr_fusion,
             verify_attributes=verify_attributes,
         )
 
@@ -179,4 +201,6 @@ if run_search and query.strip():
                     st.write(f"**Time range:** {r['start_ts']}s - {r['end_ts']}s")
                     if r.get("has_speech"):
                         st.write(f"**Transcript:** _{r['transcript']}_")
+                    if r.get("has_text"):
+                        st.write(f"**On-screen text:** _{r['ocr_text']}_")
                     st.caption(r["clip_path"])

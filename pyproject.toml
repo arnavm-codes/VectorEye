@@ -30,6 +30,7 @@ dependencies = [
     "spacy>=3.8.16",
     "ultralytics>=8.4.143",
     "en-core-web-sm",
+    "pytesseract>=0.3.13",
 ]
 
 [tool.uv]

@@ -52,6 +52,11 @@ class SearchRequest(BaseModel):
     top_k: int = 5
     source_id: str | None = None
     filters: list[FilterCondition] | None = None
+    # Fuse in transcribed speech content / OCR'd on-screen text (see
+    # app.api.search_clips). Off by default -- neither is purely additive
+    # to a visual-only ranking, so both stay opt-in.
+    use_transcript_fusion: bool = False
+    use_ocr_fusion: bool = False
 
 
 class ChatRequest(BaseModel):
@@ -108,7 +113,16 @@ def health():
 def search(req: SearchRequest):
     """Raw retrieval: no LLM involved, pure CLIP + Qdrant similarity search."""
     filters = [f.model_dump() for f in req.filters] if req.filters else None
-    return {"results": search_clips(req.query, top_k=req.top_k, source_id=req.source_id, filters=filters)}
+    return {
+        "results": search_clips(
+            req.query,
+            top_k=req.top_k,
+            source_id=req.source_id,
+            filters=filters,
+            use_transcript_fusion=req.use_transcript_fusion,
+            use_ocr_fusion=req.use_ocr_fusion,
+        )
+    }
 
 
 @app.post("/chat")

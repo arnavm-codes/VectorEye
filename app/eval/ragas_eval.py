@@ -34,7 +34,7 @@ def load_eval_queries() -> list[dict]:
     return data.get("queries", [])
 
 
-def run_eval(top_k: int = 5, use_transcript_fusion: bool = False) -> list[dict]:
+def run_eval(top_k: int = 5, use_transcript_fusion: bool = False, use_ocr_fusion: bool = False) -> list[dict]:
     warnings.filterwarnings("ignore", category=DeprecationWarning, message="Importing.*ragas.metrics.*deprecated")
     from ragas import SingleTurnSample
     from ragas.metrics import IDBasedContextPrecision, IDBasedContextRecall
@@ -52,7 +52,12 @@ def run_eval(top_k: int = 5, use_transcript_fusion: bool = False) -> list[dict]:
 
     rows = []
     for item in queries:
-        results = search_clips(item["query"], top_k=top_k, use_transcript_fusion=use_transcript_fusion)
+        results = search_clips(
+            item["query"],
+            top_k=top_k,
+            use_transcript_fusion=use_transcript_fusion,
+            use_ocr_fusion=use_ocr_fusion,
+        )
         retrieved_ids = [Path(r["clip_path"]).name for r in results]
 
         sample = SingleTurnSample(
@@ -87,8 +92,21 @@ def print_report(rows: list[dict]):
         print(f"  Context precision: {row['context_precision']:.3f}")
         print(f"  Context recall:    {row['context_recall']:.3f}")
 
-    mean_precision = sum(r["context_precision"] for r in rows) / len(rows)
-    mean_recall = sum(r["context_recall"] for r in rows) / len(rows)
+    # IDBasedContextPrecision is undefined (NaN), not 0, for a query that
+    # retrieved nothing at all (0/0) -- a real edge case once the OCR eval
+    # queries were added (a visual-only search for on-screen-text content
+    # can legitimately return zero hits above MIN_SIMILARITY_SCORE). NaN
+    # values are excluded from the mean rather than coerced to 0 or left to
+    # propagate via a naive sum() (which would silently turn the *entire*
+    # report's mean into NaN from a single undefined query) -- undefined
+    # isn't the same as "scored zero", so it shouldn't count as either.
+    precisions = [r["context_precision"] for r in rows if r["context_precision"] == r["context_precision"]]
+    recalls = [r["context_recall"] for r in rows if r["context_recall"] == r["context_recall"]]
+    excluded = len(rows) - len(precisions)
+    mean_precision = sum(precisions) / len(precisions) if precisions else float("nan")
+    mean_recall = sum(recalls) / len(recalls) if recalls else float("nan")
+    if excluded:
+        print(f"\n({excluded} quer{'y' if excluded == 1 else 'ies'} excluded from the precision mean: undefined/NaN, 0 results retrieved)")
     print(f"\n=== Mean over {len(rows)} queries ===")
     print(f"Context precision: {mean_precision:.3f}")
     print(f"Context recall:    {mean_recall:.3f}")
@@ -97,6 +115,10 @@ def print_report(rows: list[dict]):
 if __name__ == "__main__":
     import sys
 
-    fusion = "--fusion" in sys.argv
-    print(f"=== Mode: {'transcript fusion' if fusion else 'visual only'} ===")
-    print_report(run_eval(use_transcript_fusion=fusion))
+    transcript_fusion = "--fusion" in sys.argv
+    ocr_fusion = "--ocr-fusion" in sys.argv
+    mode = "+".join(
+        m for m in [transcript_fusion and "transcript fusion", ocr_fusion and "ocr fusion"] if m
+    ) or "visual only"
+    print(f"=== Mode: {mode} ===")
+    print_report(run_eval(use_transcript_fusion=transcript_fusion, use_ocr_fusion=ocr_fusion))
