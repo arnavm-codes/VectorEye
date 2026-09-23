@@ -207,3 +207,26 @@ OCR_FRAMES_PER_CLIP = int(os.environ.get("OCR_FRAMES_PER_CLIP", "3"))
 # real OCR'd text, same caveat as every other empirically-derived threshold
 # in this file.
 MIN_OCR_SCORE = float(os.environ.get("MIN_OCR_SCORE", "0.2"))
+
+# Timestamp extraction (date/time filtering, see vault note "Date/time
+# search filters" entry): OCRs each clip's first frame for a burned-in
+# NVR/DVR timestamp overlay and stores it as a first-class, range-queryable
+# `recorded_at` payload field, so a query can be scoped to a time window
+# (e.g. "yesterday 2-4pm") the way `source_id` already scopes it to a
+# camera. Deliberately its own flag, separate from ENABLE_OCR_SEARCH: this
+# reuses the same OCR backend/call, but the two features have different
+# cost/value tradeoffs (a deployment may want time-filtering without
+# wanting full on-screen-text search, or vice versa), so they shouldn't be
+# silently coupled behind one switch. A clip whose caller-supplied
+# `attributes.recorded_at` is already set skips OCR extraction entirely for
+# that clip -- explicit metadata always wins over a best-effort OCR guess,
+# and it also saves the OCR call.
+ENABLE_TIMESTAMP_EXTRACTION = os.environ.get("ENABLE_TIMESTAMP_EXTRACTION", "false").lower() == "true"
+# A burned-in overlay is the camera's own local clock with no timezone
+# marker in the image, and a caller-supplied attributes.recorded_at may
+# likewise be a naive string -- this is the timezone assumed for either
+# case when parsed as naive, before converting to UTC for storage. Default
+# UTC (a no-op conversion) rather than guessing the deployment's local
+# timezone; set to e.g. "Asia/Kolkata" if the cameras' overlays are in
+# local time.
+TIMESTAMP_OCR_ASSUMED_TZ = os.environ.get("TIMESTAMP_OCR_ASSUMED_TZ", "UTC")

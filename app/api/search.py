@@ -9,7 +9,7 @@ native RRF fusion over named vectors on the same point, N-way, no
 hand-rolled fusion logic needed.
 """
 
-from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchAny, MatchValue, Prefetch
+from qdrant_client.models import DatetimeRange, FieldCondition, Filter, Fusion, FusionQuery, MatchAny, MatchValue, Prefetch
 
 from app.config import (
     ATTRIBUTE_VERIFICATION_FRAMES,
@@ -25,7 +25,7 @@ from app.pipeline.indexer import get_client
 from app.pipeline.query_parser import extract_attribute_object_pairs
 
 
-_SUPPORTED_FILTER_OPS = {"eq", "in"}
+_SUPPORTED_FILTER_OPS = {"eq", "in", "range"}
 
 
 def _filter_conditions(source_id: str | None, filters: list[dict] | None) -> list[FieldCondition]:
@@ -34,12 +34,17 @@ def _filter_conditions(source_id: str | None, filters: list[dict] | None) -> lis
     `source_id` convenience param folded in as an "eq" condition on it.
 
     `filters` entries are `{"field": <payload key, dotted for nested
-    attributes -- e.g. "attributes.location">, "op": "eq" | "in", "value":
-    ...}`. Just these two ops for now (exact match, match-any) -- covers
-    every use case actually needed by tags/attributes/source_id filtering
-    today; range ops (for numeric/date attributes) are a real gap but
-    nothing in this project's current deployments needs them yet, so
-    they're left for whenever a real one does rather than built speculatively.
+    attributes -- e.g. "attributes.location">, "op": "eq" | "in" | "range",
+    "value": ...}`. "eq"/"in" cover exact match and match-any (tags,
+    attributes, source_id filtering). "range" is for `recorded_at` (see
+    app.pipeline.timestamp_ocr, vault note "Date/time search filters"
+    entry) -- the CCTV "narrow my search window" case -- and takes
+    `value={"gte": <ISO 8601 str>, "lte": <ISO 8601 str>}` (either bound
+    optional). Uses Qdrant's DatetimeRange, not the generic numeric Range,
+    since `recorded_at` is stored and indexed as PayloadSchemaType.DATETIME
+    (see app.pipeline.indexer.ensure_collection); a numeric
+    attributes.* range filter would need the generic Range instead, not
+    handled generically yet -- this is specifically the datetime case.
     """
     conditions = []
     if source_id:
@@ -50,6 +55,8 @@ def _filter_conditions(source_id: str | None, filters: list[dict] | None) -> lis
             conditions.append(FieldCondition(key=field, match=MatchValue(value=value)))
         elif op == "in":
             conditions.append(FieldCondition(key=field, match=MatchAny(any=value)))
+        elif op == "range":
+            conditions.append(FieldCondition(key=field, range=DatetimeRange(**value)))
         else:
             raise ValueError(f"Unsupported filter op {op!r} (supported: {_SUPPORTED_FILTER_OPS})")
     return conditions
@@ -62,6 +69,7 @@ def _to_result(hit) -> dict:
         "source_id": hit.payload.get("source_id"),
         "start_ts": hit.payload.get("start_ts"),
         "end_ts": hit.payload.get("end_ts"),
+        "recorded_at": hit.payload.get("recorded_at"),
         "has_speech": hit.payload.get("has_speech", False),
         "transcript": hit.payload.get("transcript", ""),
         "has_text": hit.payload.get("has_text", False),

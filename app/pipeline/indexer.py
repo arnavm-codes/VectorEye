@@ -15,7 +15,11 @@ section for why Qdrant was fixated for this), plus has_speech/transcript
 for the audio signal, plus generic tags/attributes (see vault note
 "Plug-and-play audit" entry, 2026-09-13) for arbitrary deployment-specific
 metadata (trip name, location, course id, ...) beyond the one required
-source_id grouping key.
+source_id grouping key, plus an optional recorded_at (see
+app.pipeline.timestamp_ocr and vault note "Date/time search filters"
+entry) for range-filtering by when a clip was actually recorded, distinct
+from indexed_at (when it was indexed) and start_ts/end_ts (offsets within
+the source video, not wall-clock time).
 """
 
 import re
@@ -32,6 +36,7 @@ from app.config import (
     CLIPS_DIR,
     ENABLE_AUDIO_SEARCH,
     ENABLE_OCR_SEARCH,
+    ENABLE_TIMESTAMP_EXTRACTION,
     FRAMES_PER_CLIP,
     OCR_FRAMES_PER_CLIP,
     PAYLOAD_INDEX_FIELDS,
@@ -41,6 +46,7 @@ from app.config import (
     TRANSCRIPT_EMBED_DIM,
 )
 from app.pipeline.embedder import embed_clip, sample_frames
+from app.pipeline.timestamp_ocr import resolve_recorded_at
 
 # `source_id` is the fallback-only naming convention: <source_id>_clip<start_ts>.mp4,
 # produced by app.pipeline.chunker for videos that went through the CLI/legacy
@@ -160,6 +166,19 @@ def ensure_collection(client: QdrantClient):
             field_name=field,
             field_schema=PayloadSchemaType.KEYWORD,
         )
+    # `recorded_at` (see app.pipeline.timestamp_ocr) is always indexed as
+    # DATETIME, unconditionally -- not folded into PAYLOAD_INDEX_FIELDS,
+    # since that list is a flat deployment-configurable set of KEYWORD
+    # (exact-match) fields, and this one needs range-query support instead.
+    # Always created regardless of ENABLE_TIMESTAMP_EXTRACTION: a
+    # deployment may set attributes.recorded_at manually without OCR
+    # extraction turned on, and the field should still be range-filterable
+    # either way. Idempotent/additive like the loop above.
+    client.create_payload_index(
+        collection_name=QDRANT_COLLECTION,
+        field_name="recorded_at",
+        field_schema=PayloadSchemaType.DATETIME,
+    )
 
 
 def _parse_clip_metadata(clip_path: Path) -> dict:
@@ -266,6 +285,25 @@ def index_clips(
         # depending which side of the system read it.
         if source_id:
             meta["source_id"] = source_id
+
+        # Recording timestamp: a caller-supplied attributes.recorded_at
+        # always wins and skips the OCR call entirely; otherwise, when
+        # ENABLE_TIMESTAMP_EXTRACTION is on, best-effort OCR of the first
+        # frame (frames[0] -- sample_frames() always includes index 0) for
+        # a burned-in NVR/DVR timestamp overlay. See
+        # app.pipeline.timestamp_ocr for why OCR and not video-container
+        # metadata (the chunker's re-encode drops that). None (the field is
+        # simply omitted from the payload below) when neither source
+        # resolves -- not stored as an explicit null, so a DatetimeRange
+        # filter naturally and correctly excludes clips with no known
+        # recording time instead of needing null-handling logic.
+        recorded_at = resolve_recorded_at(
+            attributes, frames[0] if frames else None, enabled=ENABLE_TIMESTAMP_EXTRACTION
+        )
+        if recorded_at:
+            print(f"  -> recorded_at resolved: {recorded_at}")
+            meta["recorded_at"] = recorded_at
+
         # Deterministic ID from clip_path (not a fresh uuid4 every run) so
         # re-running the pipeline upserts/overwrites existing clips instead
         # of duplicating them in the collection.

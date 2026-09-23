@@ -40,6 +40,7 @@ dog running on the beach."
 | Visual embedding | CLIP (`open_clip`, `ViT-B-32`/openai, or Long-CLIP) — sparse frame sampling + max-pool | always on | `EMBEDDING_BACKEND` |
 | Speech-content search | `faster-whisper` (`tiny`, CPU, built-in VAD) + `sentence-transformers` (`all-MiniLM-L6-v2`), fused via Qdrant's native RRF | opt-in | `ENABLE_AUDIO_SEARCH`, `use_transcript_fusion` |
 | On-screen text search (OCR) | Tesseract (`pytesseract`, system binary — no ML framework, no GPU/CUDA risk) + same sentence-transformer as above | opt-in | `ENABLE_OCR_SEARCH`, `use_ocr_fusion` |
+| Date/time filtering | Reuses Tesseract to OCR each clip's first frame for a burned-in NVR/DVR timestamp overlay, regex + `dateparser` extraction, stored as a range-queryable `recorded_at` field — own flag, independent of on-screen-text search | opt-in | `ENABLE_TIMESTAMP_EXTRACTION`, `TIMESTAMP_OCR_ASSUMED_TZ`, `filters: [{"op": "range", ...}]` |
 | Attribute verification | Open-vocab object detector (`ultralytics` YOLO-World) + spaCy dependency parse — fixes CLIP's weak attribute-object binding (e.g. "blue car" scored as "blue" + "car" independently) | opt-in, experimental | `ENABLE_ATTRIBUTE_VERIFICATION` |
 | Vector DB | Qdrant, self-hosted via Docker | always on | — |
 | API | FastAPI — `/search`, `/chat`, `/ingest`, `/ingest/batch`, `/watch`, `/sources`, `/retention/sweep` | always on | — |
@@ -208,12 +209,24 @@ curl -X POST localhost:8000/search -H "Content-Type: application/json" -d '{
   "query": "blue car at the gate",
   "filters": [
     {"field": "tags", "op": "eq", "value": "site:hq"},
-    {"field": "attributes.location", "op": "in", "value": ["Kyoto", "Osaka"]}
+    {"field": "attributes.location", "op": "in", "value": ["Kyoto", "Osaka"]},
+    {"field": "recorded_at", "op": "range", "value": {"gte": "2026-09-15T00:00:00Z", "lte": "2026-09-15T23:59:59Z"}}
   ]
 }'
 ```
 
-`op` is `"eq"` (exact match) or `"in"` (matches any value in a list).
+`op` is `"eq"` (exact match), `"in"` (matches any value in a list), or `"range"` (a `{"gte", "lte"}` window, either bound
+optional — currently only meaningful for `recorded_at`, the one datetime-indexed field).
+
+**Narrowing by date/time (`recorded_at`):** for CCTV-style deployments with a continuously growing multi-camera
+library, `source_id` alone isn't enough to keep a search scoped — you also want to say "clips from yesterday
+afternoon on camera 3" rather than searching the whole history. Set `ENABLE_TIMESTAMP_EXTRACTION=true` and each
+clip's first frame is OCR'd for a burned-in NVR/DVR timestamp overlay (common on real camera exports), stored as a
+range-queryable `recorded_at` field. A caller-supplied `attributes.recorded_at` at ingest time always takes
+precedence over OCR and skips the OCR call entirely. Sources without a burned-in overlay (or with OCR off) simply
+have no `recorded_at` and won't match a `range` filter — not every clip needs one for the feature to be useful.
+`TIMESTAMP_OCR_ASSUMED_TZ` (default `UTC`) sets the timezone assumed for a naive timestamp (no offset in the overlay
+or the manual value) before it's stored as UTC.
 
 Fold in speech content or on-screen text (both opt-in, both need indexing
 with `ENABLE_AUDIO_SEARCH`/`ENABLE_OCR_SEARCH` on — see "Stack" above — to

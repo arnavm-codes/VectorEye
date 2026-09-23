@@ -43,7 +43,7 @@ class FilterCondition(BaseModel):
     search_clips() and raising an uncaught ValueError (a 500)."""
 
     field: str
-    op: Literal["eq", "in"]
+    op: Literal["eq", "in", "range"]
     value: Any
 
 
