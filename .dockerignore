@@ -1,0 +1,10 @@
+.env
+.git
+.venv
+__pycache__/
+*.pyc
+data/raw_videos/
+data/clips/
+data/model_cache/
+yolov8*-worldv2.pt
+docs/

@@ -38,7 +38,10 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-mkdir -p data/raw_videos
+S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:4566}"
+if ! curl -fs "$S3_ENDPOINT" >/dev/null 2>&1; then
+    echo "warning: S3/Floci not reachable at $S3_ENDPOINT -- start it before running the pipeline." >&2
+fi
 
 # Download every model's weights now (Long-CLIP, OpenAI CLIP, Whisper, the transcript
 # sentence model, and the YOLO-World detector), regardless of which optional
@@ -49,5 +52,5 @@ uv run python scripts/download_models.py
 
 echo
 echo "Setup complete. Next steps:"
-echo "  1. Place source videos in data/raw_videos/ (.mp4/.mov/.mkv/.avi)"
+echo "  1. Upload source videos to the raw-videos-cctv bucket on your S3/Floci endpoint"
 echo "  2. Run ./run.sh"

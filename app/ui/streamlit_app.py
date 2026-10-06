@@ -168,7 +168,8 @@ if run_search and query.strip():
             with st.container(border=True):
                 cols = st.columns([2, 1])
                 with cols[0]:
-                    st.video(r["clip_path"])
+                    if r.get("clip_url"):
+                        st.video(r["clip_url"])
                 with cols[1]:
                     st.metric("Similarity score", f"{r['score']:.3f}")
                     if "attribute_score" in r:

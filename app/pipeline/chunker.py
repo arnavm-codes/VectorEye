@@ -13,9 +13,11 @@ produced it.
 """
 
 import subprocess
+import tempfile
 from pathlib import Path
 
-from app.config import CHUNK_OVERLAP_SECONDS, CLIP_DURATION_SECONDS, CLIPS_DIR, RAW_VIDEOS_DIR
+from app import storage
+from app.config import CHUNK_OVERLAP_SECONDS, CLIP_DURATION_SECONDS
 
 _START_TS_DIGITS = 6  # supports source videos up to ~11.5 days
 
@@ -87,18 +89,24 @@ def chunk_video(
     return sorted(clips)
 
 
-def chunk_all(raw_dir: Path = RAW_VIDEOS_DIR, out_dir: Path = CLIPS_DIR) -> list[Path]:
-    video_paths = sorted(
-        p for p in raw_dir.iterdir()
-        if p.suffix.lower() in {".mp4", ".mov", ".mkv", ".avi"}
-    )
-    all_clips: list[Path] = []
-    for video_path in video_paths:
-        print(f"Chunking {video_path.name} ...")
-        clips = chunk_video(video_path, out_dir)
-        print(f"  -> {len(clips)} clips")
-        all_clips.extend(clips)
-    return all_clips
+def chunk_all(video_key: str | None = None) -> list[str]:
+    """Chunk raw videos from the raw-videos bucket into clips uploaded to the
+    clips bucket. Processes `video_key` only if given, otherwise every video.
+    Returns the uploaded clip keys. Temp files are always cleaned up."""
+    from app.config import RAW_VIDEOS_BUCKET
+
+    video_keys = [video_key] if video_key else storage.list_raw_videos()
+    uploaded: list[str] = []
+    for key in video_keys:
+        print(f"Chunking s3://{RAW_VIDEOS_BUCKET}/{key} ...")
+        with tempfile.TemporaryDirectory(prefix="vectoreye_chunk_") as tmp:
+            tmp_dir = Path(tmp)
+            local_video = storage.download(RAW_VIDEOS_BUCKET, key, tmp_dir / Path(key).name)
+            clips = chunk_video(local_video, tmp_dir / "clips")
+            for clip in clips:
+                uploaded.append(storage.upload_clip(clip))
+        print(f"  -> {len(clips)} clips uploaded")
+    return uploaded
 
 
 if __name__ == "__main__":

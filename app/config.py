@@ -14,8 +14,20 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-RAW_VIDEOS_DIR = PROJECT_ROOT / "data" / "raw_videos"
-CLIPS_DIR = PROJECT_ROOT / "data" / "clips"
+
+# --- Object storage (Floci S3 locally; any S3-compatible store in deployment) ---
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://localhost:4566")
+# Endpoint embedded in presigned URLs -- must be reachable by whoever plays the clip.
+S3_PUBLIC_ENDPOINT = os.environ.get("S3_PUBLIC_ENDPOINT", S3_ENDPOINT)
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "test")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "test")
+S3_REGION = os.environ.get("S3_REGION", "us-east-1")
+S3_VERIFY_SSL = os.environ.get("S3_VERIFY_SSL", "true").lower() not in {"0", "false", "no"}
+RAW_VIDEOS_BUCKET = os.environ.get("RAW_VIDEOS_BUCKET", "raw-videos-cctv")
+CLIPS_BUCKET = os.environ.get("CLIPS_BUCKET", "chunks")
+PRESIGN_EXPIRY_SECONDS = int(os.environ.get("PRESIGN_EXPIRY_SECONDS", "3600"))
+
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 
 CLIP_DURATION_SECONDS = 10
 # A second, offset chunking pass (start times CHUNK_OVERLAP_SECONDS, +CLIP_DURATION_SECONDS,

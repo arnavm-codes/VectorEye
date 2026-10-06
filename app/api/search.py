@@ -9,6 +9,7 @@ same point -- no hand-rolled fusion logic needed.
 
 from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchValue, Prefetch
 
+from app import storage
 from app.config import (
     ATTRIBUTE_VERIFICATION_FRAMES,
     ATTRIBUTE_VERIFICATION_POOL,
@@ -29,9 +30,11 @@ def _camera_filter(camera_id: str | None) -> Filter | None:
 
 
 def _to_result(hit) -> dict:
+    key = hit.payload.get("clip_path")
     return {
         "score": hit.score,
-        "clip_path": hit.payload.get("clip_path"),
+        "clip_path": key,
+        "clip_url": storage.presigned_clip_url(key) if key else None,
         "camera_id": hit.payload.get("camera_id"),
         "start_ts": hit.payload.get("start_ts"),
         "end_ts": hit.payload.get("end_ts"),
@@ -51,7 +54,8 @@ def _rerank_by_attribute(results: list[dict], attribute: str, obj: str, top_k: i
     from app.pipeline.object_verifier import verify_attribute_in_frames
 
     for result in results:
-        frames = sample_frames(result["clip_path"], n_frames=ATTRIBUTE_VERIFICATION_FRAMES)
+        with storage.local_clip(result["clip_path"]) as local_path:
+            frames = sample_frames(local_path, n_frames=ATTRIBUTE_VERIFICATION_FRAMES)
         result["attribute_score"] = verify_attribute_in_frames(frames, attribute, obj)
 
     results.sort(key=lambda r: r["attribute_score"], reverse=True)
@@ -74,6 +78,10 @@ def search_clips(
     fetch_limit = max(top_k, ATTRIBUTE_VERIFICATION_POOL) if attribute_pairs else top_k
 
     client = get_client()
+    # Nothing indexed yet (the collection is only created by the indexer) ->
+    # no matches, rather than a Qdrant 404 surfacing as a 500.
+    if not client.collection_exists(QDRANT_COLLECTION):
+        return []
     query_filter = _camera_filter(camera_id)
     visual_vector = embed_text(query)
 

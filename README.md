@@ -64,7 +64,16 @@ cp .env.example .env   # fill in GROQ_API_KEY if you want the /chat endpoint
 docker compose up -d   # starts Qdrant on localhost:6333
 ```
 
-Place the source videos in `data/raw_videos/` (`.mp4`/`.mov`/`.mkv`/`.avi`).
+Storage is S3-compatible (Floci locally). Upload videos (`.mp4`/`.mov`/`.mkv`/`.avi`)
+to the `raw-videos-cctv` bucket; clips are written to the `chunks` bucket. See
+`.env.example` for the endpoint/credential/bucket settings (`S3_ENDPOINT`,
+`S3_PUBLIC_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`,
+`S3_VERIFY_SSL`, `RAW_VIDEOS_BUCKET`, `CLIPS_BUCKET`, `PRESIGN_EXPIRY_SECONDS`,
+`VECTOREYE_PORT`).
+
+The `clip_path` payload field in Qdrant is the clip's **S3 object key** in the
+`chunks` bucket. If you are upgrading from the local-directory version, delete
+the Qdrant collection and reindex (old points hold local filesystem paths).
 
 ## Run the pipeline
 
@@ -72,9 +81,10 @@ Place the source videos in `data/raw_videos/` (`.mp4`/`.mov`/`.mkv`/`.avi`).
 uv run python scripts/run_pipeline.py
 ```
 
-This chunks every video in `data/raw_videos/` into `data/clips/`, embeds
-each clip with CLIP, and upserts them into the Qdrant `video_clips`
-collection.
+This chunks every video in the `raw-videos-cctv` bucket into the `chunks`
+bucket, embeds each clip with CLIP, and upserts them into the Qdrant
+collection. Embedding is incremental (already-indexed clips are skipped); pass
+`--reindex-all` to re-embed everything.
 
 ## Streamlit demo UI
 
@@ -162,14 +172,22 @@ this reason.
 ## Serve the API
 
 ```bash
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 9100
 ```
 
 - `POST /search {"query": "blue car at the gate"}` — raw CLIP+Qdrant
   retrieval, no LLM involved.
 - `POST /chat {"query": "..."}` — same retrieval, wrapped with Groq for
   query cleanup + a conversational summary of results.
-- `GET /clip/{filename}` — serves a matched clip file for playback.
+- `GET /health` — `{"status": "ok"|"degraded", "s3": ..., "qdrant": ...}`.
+- `POST /index {"video_key": null, "reindex_all": false}` — chunks videos from
+  the raw-videos bucket and indexes the clips as a background job (202, one job
+  at a time, 409 if one is running). `video_key` limits it to one video.
+  Don't run it during live search traffic: it shares the API process's CPU.
+- `GET /index/{job_id}` — job status (`queued`/`chunking`/`indexing`/`done`/`error`).
+- Search results carry a new `clip_url` field: a presigned URL (signed against
+  `S3_PUBLIC_ENDPOINT`) for playing the clip. `clip_path` is the S3 key.
+- `GET /clip/{key}` — proxy fallback that streams the clip from S3.
 
 ## Retrieval evaluation (RAGAS)
 
@@ -180,7 +198,7 @@ apply. What's evaluated instead is retrieval quality itself, via RAGAS's
 hand-labeled ground truth, no LLM judge involved.
 
 1. Fill in `data/eval_queries.json` with real queries and the correct clip
-   filenames for each (label these by watching the actual footage).
+   **keys** (same as filenames when clips have no key prefix) for each (label these by watching the actual footage).
 2. `uv run python -m app.eval.ragas_eval`
 
 Reports per-query and mean context precision/recall.

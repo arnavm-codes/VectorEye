@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Runs the pipeline (if needed) and launches the Streamlit demo UI.
+# Runs the (incremental) pipeline and launches the Streamlit demo UI.
 # Usage: ./run.sh [--reindex]
-#   --reindex  force a fresh chunk+embed+index pass even if data/clips/
-#              already has clips (e.g. after adding new source videos).
+#   --reindex  re-embed clips even if they are already indexed.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -19,15 +18,17 @@ fi
 echo "=== Ensuring Qdrant is running ==="
 docker compose up -d
 
-if [ "$REINDEX" -eq 1 ] || [ -z "$(find data/clips -maxdepth 1 -name '*.mp4' -print -quit 2>/dev/null)" ]; then
-    if [ -z "$(find data/raw_videos -maxdepth 1 \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.avi' \) -print -quit 2>/dev/null)" ]; then
-        echo "error: no source videos found in data/raw_videos/. Add some and re-run." >&2
-        exit 1
-    fi
-    echo "=== Running chunk + embed + index pipeline ==="
-    uv run python scripts/run_pipeline.py
+S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:4566}"
+if ! curl -fs "$S3_ENDPOINT" >/dev/null 2>&1; then
+    echo "error: S3/Floci not reachable at $S3_ENDPOINT. Start Floci and re-run." >&2
+    exit 1
+fi
+
+echo "=== Running chunk + embed + index pipeline (incremental) ==="
+if [ "$REINDEX" -eq 1 ]; then
+    uv run python scripts/run_pipeline.py --reindex-all
 else
-    echo "=== data/clips/ already has clips -- skipping pipeline (use --reindex to force) ==="
+    uv run python scripts/run_pipeline.py
 fi
 
 echo "=== Launching Streamlit demo UI ==="

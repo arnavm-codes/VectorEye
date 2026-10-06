@@ -48,7 +48,11 @@ if !HEALTHY! == 0 (
     echo warning: Qdrant did not report healthy within 30s -- check 'docker compose logs'.
 )
 
-if not exist data\raw_videos mkdir data\raw_videos
+if not defined S3_ENDPOINT set S3_ENDPOINT=http://localhost:4566
+curl -fs !S3_ENDPOINT! >nul 2>&1
+if errorlevel 1 (
+    echo warning: S3/Floci not reachable at !S3_ENDPOINT! -- start it before running the pipeline.
+)
 
 REM Download every model's weights now (Long-CLIP, OpenAI CLIP, Whisper, the transcript
 REM sentence model, and the YOLO-World detector), regardless of which optional
@@ -59,5 +63,5 @@ uv run python scripts\download_models.py || exit /b 1
 
 echo.
 echo Setup complete. Next steps:
-echo   1. Place source videos in data\raw_videos\ ^(.mp4/.mov/.mkv/.avi^)
+echo   1. Upload source videos to the raw-videos-cctv bucket on your S3/Floci endpoint
 echo   2. Run run.bat

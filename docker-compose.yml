@@ -7,5 +7,21 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
 
+  vectoreye:
+    build: .
+    ports:
+      - "9100:9100"
+    env_file: .env
+    environment:
+      QDRANT_HOST: qdrant
+      # Floci runs separately on the host (port 4566); reach it from the container:
+      S3_ENDPOINT: http://host.docker.internal:4566
+      # Presigned URLs must be reachable from the caller's browser, so keep this on localhost:
+      S3_PUBLIC_ENDPOINT: http://localhost:4566
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - qdrant
+
 volumes:
   qdrant_storage:

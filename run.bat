@@ -1,5 +1,5 @@
 @echo off
-REM Runs the pipeline (if needed) and launches the Streamlit demo UI.
+REM Runs the (incremental) pipeline and launches the Streamlit demo UI.
 REM Usage: run.bat [--reindex]
 setlocal
 cd /d "%~dp0"
@@ -16,20 +16,18 @@ if "%~1"=="--reindex" set REINDEX=1
 echo === Ensuring Qdrant is running ===
 docker compose up -d || exit /b 1
 
-set NEED_PIPELINE=0
-if %REINDEX%==1 set NEED_PIPELINE=1
-if not exist data\clips\*.mp4 set NEED_PIPELINE=1
+if not defined S3_ENDPOINT set S3_ENDPOINT=http://localhost:4566
+curl -fs %S3_ENDPOINT% >nul 2>&1
+if errorlevel 1 (
+    echo error: S3/Floci not reachable at %S3_ENDPOINT%. Start Floci and re-run.
+    exit /b 1
+)
 
-if %NEED_PIPELINE%==1 (
-    dir /b data\raw_videos\*.mp4 data\raw_videos\*.mov data\raw_videos\*.mkv data\raw_videos\*.avi >nul 2>&1
-    if errorlevel 1 (
-        echo error: no source videos found in data\raw_videos\. Add some and re-run.
-        exit /b 1
-    )
-    echo === Running chunk + embed + index pipeline ===
-    uv run python scripts\run_pipeline.py || exit /b 1
+echo === Running chunk + embed + index pipeline ^(incremental^) ===
+if %REINDEX%==1 (
+    uv run python scripts\run_pipeline.py --reindex-all || exit /b 1
 ) else (
-    echo === data\clips\ already has clips -- skipping pipeline ^(use --reindex to force^) ===
+    uv run python scripts\run_pipeline.py || exit /b 1
 )
 
 echo === Launching Streamlit demo UI ===

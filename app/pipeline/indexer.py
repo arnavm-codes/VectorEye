@@ -6,7 +6,7 @@ only on clips where VAD-gated transcription found real speech). See vault
 note "Feasibility study" entry (2026-09-03) for why these live in separate
 vector spaces rather than one blended embedding.
 
-Payload carries clip_path/camera_id/start_ts/end_ts so search can combine
+Payload carries clip_path (the clip's S3 object key in the clips bucket)/camera_id/start_ts/end_ts so search can combine
 vector similarity with structured filtering (see vault note "Vector DB"
 section for why Qdrant was fixated for this), plus has_speech/transcript
 for the audio signal.
@@ -19,10 +19,11 @@ from pathlib import Path
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
+from app import storage
 from app.config import (
     CLIP_DURATION_SECONDS,
     CLIP_EMBED_DIM,
-    CLIPS_DIR,
+    CLIPS_BUCKET,
     ENABLE_AUDIO_SEARCH,
     QDRANT_COLLECTION,
     QDRANT_HOST,
@@ -65,39 +66,62 @@ def _parse_clip_metadata(clip_path: Path) -> dict:
     }
 
 
-def index_clips(clips_dir: Path = CLIPS_DIR) -> int:
+def _point_id(key: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"s3://{CLIPS_BUCKET}/{key}"))
+
+
+def index_clips(only_new: bool = True, video_stem: str | None = None) -> int:
+    """Embed every clip in the clips bucket and upsert into Qdrant.
+    only_new=True skips clips whose point already exists (cheap re-runs);
+    pass False after changing the embedding backend or models.
+    video_stem limits the pass to clips cut from that source video (clip
+    names are `<stem>_clip<start_ts>.mp4`) instead of the whole bucket."""
     client = get_client()
     ensure_collection(client)
 
-    clip_paths = sorted(clips_dir.glob("*.mp4"))
+    keys = storage.list_clips()
+    if video_stem is not None:
+        keys = [k for k in keys if _parse_clip_metadata(Path(k))["camera_id"] == video_stem]
+    if only_new and keys:
+        existing: set[str] = set()
+        for i in range(0, len(keys), 256):  # batch to keep requests small on large libraries
+            existing |= {
+                str(p.id)
+                for p in client.retrieve(
+                    collection_name=QDRANT_COLLECTION,
+                    ids=[_point_id(k) for k in keys[i : i + 256]],
+                    with_payload=False,
+                    with_vectors=False,
+                )
+            }
+        keys = [k for k in keys if _point_id(k) not in existing]
+
     points = []
-    for clip_path in clip_paths:
-        print(f"Embedding {clip_path.name} ...")
-        visual_vector = embed_clip(clip_path)
-        vectors = {"visual": visual_vector.tolist()}
+    for key in keys:
+        print(f"Embedding {key} ...")
+        with storage.local_clip(key) as clip_path:
+            visual_vector = embed_clip(clip_path)
+            vectors = {"visual": visual_vector.tolist()}
 
-        transcript = None
-        if ENABLE_AUDIO_SEARCH:
-            from app.pipeline.transcriber import transcribe_clip
+            transcript = None
+            if ENABLE_AUDIO_SEARCH:
+                from app.pipeline.transcriber import transcribe_clip
 
-            transcript = transcribe_clip(clip_path)
-            if transcript:
-                from app.pipeline.text_embedder import embed_transcript_text
+                transcript = transcribe_clip(clip_path)
+                if transcript:
+                    from app.pipeline.text_embedder import embed_transcript_text
 
-                print(f"  -> speech detected: {transcript!r}")
-                vectors["transcript"] = embed_transcript_text(transcript).tolist()
+                    print(f"  -> speech detected: {transcript!r}")
+                    vectors["transcript"] = embed_transcript_text(transcript).tolist()
 
-        meta = _parse_clip_metadata(clip_path)
-        # Deterministic ID from clip_path (not a fresh uuid4 every run) so
-        # re-running the pipeline upserts/overwrites existing clips instead
-        # of duplicating them in the collection.
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(clip_path)))
+        meta = _parse_clip_metadata(Path(key))
         points.append(
             PointStruct(
-                id=point_id,
+                id=_point_id(key),
                 vector=vectors,
                 payload={
-                    "clip_path": str(clip_path),
+                    # S3 key in the clips bucket (field name kept for compatibility).
+                    "clip_path": key,
                     "has_speech": transcript is not None,
                     "transcript": transcript or "",
                     **meta,
