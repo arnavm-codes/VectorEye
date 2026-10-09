@@ -50,6 +50,17 @@ fi
 echo "=== Downloading all model weights (one-time, ~1.3 GB) ==="
 uv run python scripts/download_models.py
 
+# OCR search (see README) is opt-in and off by default -- its backend is a
+# system binary (not a pip package: pytesseract is just a thin wrapper
+# around it), so `uv sync` alone can't install it. Only check/warn if the
+# user has actually enabled it, same reasoning as the YOLO-World check above.
+if [ -f .env ] && grep -qE '^ENABLE_OCR_SEARCH=true' .env; then
+    if ! command -v tesseract >/dev/null 2>&1; then
+        echo "warning: ENABLE_OCR_SEARCH=true but the 'tesseract' binary isn't installed." >&2
+        echo "  Install it (e.g. 'sudo apt install tesseract-ocr' on Debian/Ubuntu) before indexing." >&2
+    fi
+fi
+
 echo
 echo "Setup complete. Next steps:"
 echo "  1. Upload source videos to the raw-videos-cctv bucket on your S3/Floci endpoint"

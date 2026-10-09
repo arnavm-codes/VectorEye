@@ -53,10 +53,18 @@ def _load_longclip():
 def _load_model():
     global _model, _preprocess, _tokenizer
     if _model is None:
+        # Explicit elif + raise, not a catch-all else -- fails loudly on an
+        # unrecognized EMBEDDING_BACKEND instead of silently defaulting to
+        # base CLIP. See app.config's EMBEDDING_BACKEND validation (which
+        # already catches this at startup) and the vault note "OCR effort
+        # kicked off" entry, 2026-09-13, for why this is now the house
+        # convention for every backend-family dispatch in this codebase.
         if EMBEDDING_BACKEND == "longclip":
             _model, _preprocess, _tokenizer = _load_longclip()
-        else:
+        elif EMBEDDING_BACKEND == "clip":
             _model, _preprocess, _tokenizer = _load_open_clip()
+        else:
+            raise ValueError(f"Unrecognized EMBEDDING_BACKEND {EMBEDDING_BACKEND!r} (expected 'clip' or 'longclip')")
     return _model, _preprocess, _tokenizer
 
 
@@ -78,10 +86,20 @@ def sample_frames(clip_path, n_frames: int = FRAMES_PER_CLIP) -> list[Image.Imag
     return frames
 
 
-def embed_clip(clip_path) -> np.ndarray:
-    """Returns a single max-pooled, L2-normalized embedding vector for a clip."""
+def embed_clip(clip_path, frames: list[Image.Image] | None = None) -> np.ndarray:
+    """Returns a single max-pooled, L2-normalized embedding vector for a clip.
+
+    `frames` lets a caller pass in an already-sampled frame list instead of
+    this function sampling its own -- used by app.pipeline.indexer so a
+    clip's frames are only decoded from disk once per index pass even when
+    OCR needs its own (sparser) subsample of the same frames, instead of
+    opening and seeking the video file a second time. Found by code review:
+    with ENABLE_OCR_SEARCH on, indexing was decoding every clip's video
+    twice (once here, once for OCR's own sample_frames() call).
+    """
     model, preprocess, _ = _load_model()
-    frames = sample_frames(clip_path)
+    if frames is None:
+        frames = sample_frames(clip_path)
     if not frames:
         raise ValueError(f"No frames could be read from {clip_path}")
 

@@ -31,6 +31,7 @@ dependencies = [
     "ultralytics>=8.4.143",
     "en-core-web-sm",
     "boto3>=1.43.108",
+    "pytesseract>=0.3.13",
 ]
 
 [tool.uv]

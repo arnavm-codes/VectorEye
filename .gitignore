@@ -21,6 +21,11 @@ data/clips/*
 # Downloaded model checkpoints -- large binaries, re-downloadable, not committed
 data/model_cache/
 
+# Change-detection fingerprint state (app/pipeline/change_detection.py) --
+# local runtime state tied to this machine's data/raw_videos contents, not
+# something to commit
+data/.ingest_state.json
+
 # YOLO-World weights (attribute-verification detector, any size -- l/m/s all
 # benchmarked, see vault note) and its internal CLIP text encoder --
 # ultralytics/its clip dependency download these to the repo root/`weights/`

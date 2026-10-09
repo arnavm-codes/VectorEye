@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 from app import storage
-from app.config import CHUNK_OVERLAP_SECONDS, CLIP_DURATION_SECONDS
+from app.config import CHUNK_OVERLAP_SECONDS, CLIP_DURATION_SECONDS, RAW_VIDEOS_BUCKET
 
 _START_TS_DIGITS = 6  # supports source videos up to ~11.5 days
 
@@ -89,23 +89,30 @@ def chunk_video(
     return sorted(clips)
 
 
+def chunk_video_key(video_key: str) -> list[str]:
+    """Chunk one raw video (an object key in the raw-videos bucket) into clips
+    uploaded to the clips bucket. Returns the uploaded clip keys. Temp files
+    are always cleaned up."""
+    print(f"Chunking s3://{RAW_VIDEOS_BUCKET}/{video_key} ...")
+    uploaded: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="vectoreye_chunk_") as tmp:
+        tmp_dir = Path(tmp)
+        local_video = storage.download(RAW_VIDEOS_BUCKET, video_key, tmp_dir / Path(video_key).name)
+        clips = chunk_video(local_video, tmp_dir / "clips")
+        for clip in clips:
+            uploaded.append(storage.upload_clip(clip))
+    print(f"  -> {len(uploaded)} clips uploaded")
+    return uploaded
+
+
 def chunk_all(video_key: str | None = None) -> list[str]:
     """Chunk raw videos from the raw-videos bucket into clips uploaded to the
     clips bucket. Processes `video_key` only if given, otherwise every video.
-    Returns the uploaded clip keys. Temp files are always cleaned up."""
-    from app.config import RAW_VIDEOS_BUCKET
-
+    Returns the uploaded clip keys."""
     video_keys = [video_key] if video_key else storage.list_raw_videos()
     uploaded: list[str] = []
     for key in video_keys:
-        print(f"Chunking s3://{RAW_VIDEOS_BUCKET}/{key} ...")
-        with tempfile.TemporaryDirectory(prefix="vectoreye_chunk_") as tmp:
-            tmp_dir = Path(tmp)
-            local_video = storage.download(RAW_VIDEOS_BUCKET, key, tmp_dir / Path(key).name)
-            clips = chunk_video(local_video, tmp_dir / "clips")
-            for clip in clips:
-                uploaded.append(storage.upload_clip(clip))
-        print(f"  -> {len(clips)} clips uploaded")
+        uploaded.extend(chunk_video_key(key))
     return uploaded
 
 

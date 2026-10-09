@@ -65,9 +65,9 @@ def _get_public_s3():
     return _public_client
 
 
-def list_keys(bucket: str, suffixes: set[str] | None = None) -> list[str]:
+def list_keys(bucket: str, suffixes: set[str] | None = None, prefix: str = "") -> list[str]:
     keys = []
-    for page in get_s3().get_paginator("list_objects_v2").paginate(Bucket=bucket):
+    for page in get_s3().get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
             if key.endswith("/"):
@@ -78,8 +78,23 @@ def list_keys(bucket: str, suffixes: set[str] | None = None) -> list[str]:
     return sorted(keys)
 
 
-def list_raw_videos() -> list[str]:
-    return list_keys(RAW_VIDEOS_BUCKET, VIDEO_EXTENSIONS)
+def list_raw_videos(prefix: str = "") -> list[str]:
+    return list_keys(RAW_VIDEOS_BUCKET, VIDEO_EXTENSIONS, prefix)
+
+
+def raw_video_exists(key: str) -> bool:
+    try:
+        get_s3().head_object(Bucket=RAW_VIDEOS_BUCKET, Key=key)
+        return True
+    except ClientError:
+        return False
+
+
+def raw_video_fingerprint(key: str) -> list:
+    """(ETag, size) of a raw video object -- what change detection compares to
+    decide whether a video needs re-processing. Raises ClientError if missing."""
+    head = get_s3().head_object(Bucket=RAW_VIDEOS_BUCKET, Key=key)
+    return [head["ETag"].strip('"'), head["ContentLength"]]
 
 
 def list_clips() -> list[str]:
@@ -104,6 +119,10 @@ def clip_exists(key: str) -> bool:
         return True
     except ClientError:
         return False
+
+
+def delete_clip(key: str) -> None:
+    get_s3().delete_object(Bucket=CLIPS_BUCKET, Key=key)
 
 
 def presigned_clip_url(key: str) -> str:

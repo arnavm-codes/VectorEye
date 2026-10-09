@@ -55,12 +55,22 @@ LONGCLIP_EMBED_DIM = 512  # LongCLIP-B is ViT-B/16-based, same dim as baseline
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
 
+# Fails loudly on an unrecognized EMBEDDING_BACKEND instead of silently
+# falling back to the default -- found as a real gap during the OCR
+# backend-architecture planning (see vault note "OCR effort kicked off"
+# entry, 2026-09-13): the old code (`if == "longclip": ... else: ...`)
+# treated any unrecognized value, including a typo, as "clip" with no
+# error. This is now the house convention for every model with a
+# family-switching backend (see app.pipeline.embedder._load_model() and
+# app.pipeline.ocr's dispatch, which both fail the same way).
 if EMBEDDING_BACKEND == "longclip":
     QDRANT_COLLECTION = "video_clips_longclip"
     CLIP_EMBED_DIM = LONGCLIP_EMBED_DIM
-else:
+elif EMBEDDING_BACKEND == "clip":
     QDRANT_COLLECTION = "video_clips"
     CLIP_EMBED_DIM = 512  # ViT-B-32 output dim
+else:
+    raise ValueError(f"Unrecognized EMBEDDING_BACKEND {EMBEDDING_BACKEND!r} (expected 'clip' or 'longclip')")
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
@@ -135,3 +145,77 @@ ATTRIBUTE_VERIFICATION_POOL = int(os.environ.get("ATTRIBUTE_VERIFICATION_POOL", 
 # once at indexing time. See vault note's per-frame benchmark for why this
 # was the larger lever versus detector size alone.
 ATTRIBUTE_VERIFICATION_FRAMES = int(os.environ.get("ATTRIBUTE_VERIFICATION_FRAMES", "3"))
+
+# Generic metadata layer (see vault note "Plug-and-play audit" entry,
+# 2026-09-13): every clip payload carries a required `source_id` (the
+# generic grouping key -- a camera, a course, a trip, whatever a given
+# deployment's videos are grouped by) plus two open-ended buckets: `tags`
+# (a flat list of free-form strings, e.g. "trip:japan-2024") and
+# `attributes` (a structured key/value dict, e.g. {"location": "Kyoto"}).
+# Neither bucket's keys are hardcoded in the pipeline -- a deployment just
+# starts passing whatever tags/attributes it wants at ingestion time.
+#
+# PAYLOAD_INDEX_FIELDS lists which top-level payload fields get a Qdrant
+# payload index (required for that field to be filtered/matched
+# efficiently at query time -- see qdrant_client.create_payload_index calls
+# in app/pipeline/indexer.py). `source_id` is indexed by default since
+# every deployment filters by it; a deployment that wants fast filtering on
+# a specific attribute (e.g. "attributes.location" for the personal-gallery
+# case, "attributes.course_id" for teaching video) adds it here via env var
+# rather than editing code. This is the "per-deployment schema
+# declaration" -- deliberately just a list of field paths, not a bigger
+# schema/type system, since Qdrant's payload is already schemaless JSON and
+# the only thing actually required up front is which fields need an index.
+PAYLOAD_INDEX_FIELDS = [
+    f.strip()
+    for f in os.environ.get("PAYLOAD_INDEX_FIELDS", "source_id,tags").split(",")
+    if f.strip()
+]
+
+# Default polling interval for a watch-folder worker (Phase 4 of the
+# plug-and-play effort, see vault note "Plug-and-play audit" entry,
+# 2026-09-13) -- how often it re-scans its directory for new/changed
+# videos. Overridable per-watch via POST /watch's interval_seconds.
+WATCH_POLL_INTERVAL_SECONDS = int(os.environ.get("WATCH_POLL_INTERVAL_SECONDS", "30"))
+
+# Retention sweep (Phase 5 of the plug-and-play effort, same vault note
+# entry): periodically deletes clips whose `attributes.retention_days` has
+# elapsed since indexing -- the CCTV-style rolling-window case. Off by
+# default -- this is a destructive, automatic operation, so it needs an
+# explicit deployment opt-in; a deployment that never sets retention_days
+# on anything is unaffected either way, but the automatic loop itself
+# shouldn't run without someone deciding to turn it on. POST
+# /retention/sweep (a manual, explicit trigger) is always available
+# regardless of this flag.
+ENABLE_RETENTION_SWEEP = os.environ.get("ENABLE_RETENTION_SWEEP", "false").lower() == "true"
+RETENTION_SWEEP_INTERVAL_SECONDS = int(os.environ.get("RETENTION_SWEEP_INTERVAL_SECONDS", "3600"))
+
+# On-screen text search (OCR) -- same additive/config-gated/off-by-default
+# pattern as speech-content search (ENABLE_AUDIO_SEARCH above): an
+# independent named vector fused in via RRF at query time, aimed mainly at
+# slide/whiteboard-heavy content (see vault note "OCR effort kicked off"
+# entry, 2026-09-13, for the engine comparison behind this default).
+ENABLE_OCR_SEARCH = os.environ.get("ENABLE_OCR_SEARCH", "false").lower() == "true"
+# "tesseract" (default) -- Apache 2.0, no ML-framework dependency at all,
+# sidesteps the torch/CUDA-pull risk category entirely rather than needing
+# another careful CPU-only pin. Documented fallback if real-footage testing
+# shows this isn't accurate enough for small/distorted CCTV-style text:
+# "paddleocr" (Apache 2.0, still lightweight at its small tier, better
+# scene-text accuracy, at the cost of a second ML framework to vet) -- not
+# implemented yet, addable later as a pure addition with zero call-site
+# changes (see app.pipeline.ocr's backend dispatch).
+OCR_BACKEND = os.environ.get("OCR_BACKEND", "tesseract")
+# Frames sampled per clip for OCR -- separate from FRAMES_PER_CLIP (used
+# for the visual embedding): on-screen text is typically static across many
+# consecutive frames (a slide held for several seconds), so a sparser
+# sample is enough to catch it, same reasoning as
+# ATTRIBUTE_VERIFICATION_FRAMES's sparser sampling for that feature.
+OCR_FRAMES_PER_CLIP = int(os.environ.get("OCR_FRAMES_PER_CLIP", "3"))
+# Same role as MIN_TRANSCRIPT_SCORE for the transcript fusion branch --
+# gates weak/off-topic ocr_text matches out of the fused ranking. Starting
+# at the same 0.2 value as MIN_TRANSCRIPT_SCORE since both branches embed
+# with the same sentence-transformer model into the same kind of vector
+# space -- explicitly a starting point pending real calibration against
+# real OCR'd text, same caveat as every other empirically-derived threshold
+# in this file.
+MIN_OCR_SCORE = float(os.environ.get("MIN_OCR_SCORE", "0.2"))
