@@ -87,10 +87,13 @@ def chunk_video(
     return sorted(clips)
 
 
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
+
+
 def chunk_all(raw_dir: Path = RAW_VIDEOS_DIR, out_dir: Path = CLIPS_DIR) -> list[Path]:
     video_paths = sorted(
         p for p in raw_dir.iterdir()
-        if p.suffix.lower() in {".mp4", ".mov", ".mkv", ".avi"}
+        if p.suffix.lower() in VIDEO_EXTENSIONS
     )
     all_clips: list[Path] = []
     for video_path in video_paths:

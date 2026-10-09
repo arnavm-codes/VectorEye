@@ -18,7 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import streamlit as st
 
-from app.config import ENABLE_ATTRIBUTE_VERIFICATION, ENABLE_AUDIO_SEARCH, GROQ_API_KEY, QDRANT_COLLECTION
+from app.config import (
+    ENABLE_ATTRIBUTE_VERIFICATION,
+    ENABLE_AUDIO_SEARCH,
+    ENABLE_OCR_SEARCH,
+    GROQ_API_KEY,
+    QDRANT_COLLECTION,
+)
 
 st.set_page_config(page_title="Video Library RAG (POC)", page_icon="🎥", layout="wide")
 
@@ -36,13 +42,16 @@ def _warm_models():
 
     load_visual_model()
 
-    if ENABLE_AUDIO_SEARCH:
+    if ENABLE_AUDIO_SEARCH or ENABLE_OCR_SEARCH:
+        # Same sentence-transformer model backs both transcript and
+        # ocr_text search (see app.pipeline.text_embedder), so warming it
+        # once here covers either or both.
         from app.pipeline.text_embedder import _load_model as load_text_embed_model
 
         load_text_embed_model()
-        # Whisper is indexing-only (never called during search), so it isn't
-        # warmed here -- pre-loading it wouldn't speed up anything a user of
-        # this UI actually does.
+        # Whisper/Tesseract are indexing-only (never called during search),
+        # so neither is warmed here -- pre-loading them wouldn't speed up
+        # anything a user of this UI actually does.
 
     return True
 
@@ -64,12 +73,12 @@ def _qdrant_status() -> tuple[bool, str]:
         return False, f"Can't reach Qdrant ({exc}). Run `docker compose up -d` first."
 
 
-def _list_camera_ids() -> list[str]:
+def _list_source_ids() -> list[str]:
     try:
         from app.pipeline.indexer import get_client
         client = get_client()
         points, _ = client.scroll(QDRANT_COLLECTION, limit=1000, with_payload=True)
-        return sorted({p.payload.get("camera_id") for p in points if p.payload.get("camera_id")})
+        return sorted({p.payload.get("source_id") for p in points if p.payload.get("source_id")})
     except Exception:
         return []
 
@@ -87,9 +96,9 @@ with st.sidebar:
     st.header("Options")
     top_k = st.slider("Results to show", min_value=1, max_value=10, value=5)
 
-    camera_ids = _list_camera_ids() if ready else []
-    camera_filter = st.selectbox("Camera filter", options=["All cameras"] + camera_ids)
-    camera_filter = None if camera_filter == "All cameras" else camera_filter
+    source_ids = _list_source_ids() if ready else []
+    source_filter = st.selectbox("Source filter", options=["All sources"] + source_ids)
+    source_filter = None if source_filter == "All sources" else source_filter
 
     use_chat_mode = st.toggle(
         "Groq chat mode (query cleanup + summary)",
@@ -112,6 +121,18 @@ with st.sidebar:
     )
     if not ENABLE_AUDIO_SEARCH:
         st.caption("Set ENABLE_AUDIO_SEARCH=true and re-index to enable this.")
+
+    use_ocr_fusion = st.toggle(
+        "Fuse in on-screen text (experimental)",
+        value=False,
+        disabled=not ENABLE_OCR_SEARCH,
+        help="Combines the visual CLIP ranking with a ranking over clips' "
+        "OCR'd on-screen text (Reciprocal Rank Fusion) -- slides, "
+        "whiteboards, signage. Only affects clips where text was detected "
+        "during indexing.",
+    )
+    if not ENABLE_OCR_SEARCH:
+        st.caption("Set ENABLE_OCR_SEARCH=true and re-index to enable this.")
 
     verify_attributes = st.toggle(
         "Verify attributes, e.g. \"blue car\" (experimental, slow)",
@@ -151,8 +172,9 @@ if run_search and query.strip():
         results = search_clips(
             search_query,
             top_k=top_k,
-            camera_id=camera_filter,
+            source_id=source_filter,
             use_transcript_fusion=use_transcript_fusion,
+            use_ocr_fusion=use_ocr_fusion,
             verify_attributes=verify_attributes,
         )
 
@@ -173,8 +195,12 @@ if run_search and query.strip():
                     st.metric("Similarity score", f"{r['score']:.3f}")
                     if "attribute_score" in r:
                         st.metric("Attribute-verified score", f"{r['attribute_score']:.3f}")
-                    st.write(f"**Camera:** {r['camera_id']}")
+                    st.write(f"**Source:** {r['source_id']}")
+                    if r.get("tags"):
+                        st.write(f"**Tags:** {', '.join(r['tags'])}")
                     st.write(f"**Time range:** {r['start_ts']}s - {r['end_ts']}s")
                     if r.get("has_speech"):
                         st.write(f"**Transcript:** _{r['transcript']}_")
+                    if r.get("has_text"):
+                        st.write(f"**On-screen text:** _{r['ocr_text']}_")
                     st.caption(r["clip_path"])

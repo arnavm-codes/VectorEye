@@ -1,18 +1,21 @@
 """Core retrieval: text query -> CLIP text embedding -> Qdrant similarity search.
 
 No LLM in this path -- purely nearest-neighbor over embeddings, per the
-project's core design constraint. Optionally fuses in a second signal from
-transcribed speech content (see vault note "Feasibility study" entry,
-2026-09-03) via Qdrant's native RRF fusion over two named vectors on the
-same point -- no hand-rolled fusion logic needed.
+project's core design constraint. Optionally fuses in one or more
+secondary signals -- transcribed speech content (see vault note
+"Feasibility study" entry, 2026-09-03) and/or on-screen OCR'd text (see
+vault note "OCR effort kicked off" entry, 2026-09-13) -- via Qdrant's
+native RRF fusion over named vectors on the same point, N-way, no
+hand-rolled fusion logic needed.
 """
 
-from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchValue, Prefetch
+from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchAny, MatchValue, Prefetch
 
 from app.config import (
     ATTRIBUTE_VERIFICATION_FRAMES,
     ATTRIBUTE_VERIFICATION_POOL,
     ENABLE_ATTRIBUTE_VERIFICATION,
+    MIN_OCR_SCORE,
     MIN_SIMILARITY_SCORE,
     MIN_TRANSCRIPT_SCORE,
     QDRANT_COLLECTION,
@@ -22,21 +25,49 @@ from app.pipeline.indexer import get_client
 from app.pipeline.query_parser import extract_attribute_object_pairs
 
 
-def _camera_filter(camera_id: str | None) -> Filter | None:
-    if not camera_id:
-        return None
-    return Filter(must=[FieldCondition(key="camera_id", match=MatchValue(value=camera_id))])
+_SUPPORTED_FILTER_OPS = {"eq", "in"}
+
+
+def _filter_conditions(source_id: str | None, filters: list[dict] | None) -> list[FieldCondition]:
+    """Builds the list of Qdrant FieldConditions from the generic `filters`
+    list (see vault note "Plug-and-play audit" entry, 2026-09-13), plus the
+    `source_id` convenience param folded in as an "eq" condition on it.
+
+    `filters` entries are `{"field": <payload key, dotted for nested
+    attributes -- e.g. "attributes.location">, "op": "eq" | "in", "value":
+    ...}`. Just these two ops for now (exact match, match-any) -- covers
+    every use case actually needed by tags/attributes/source_id filtering
+    today; range ops (for numeric/date attributes) are a real gap but
+    nothing in this project's current deployments needs them yet, so
+    they're left for whenever a real one does rather than built speculatively.
+    """
+    conditions = []
+    if source_id:
+        conditions.append(FieldCondition(key="source_id", match=MatchValue(value=source_id)))
+    for f in filters or []:
+        field, op, value = f["field"], f["op"], f["value"]
+        if op == "eq":
+            conditions.append(FieldCondition(key=field, match=MatchValue(value=value)))
+        elif op == "in":
+            conditions.append(FieldCondition(key=field, match=MatchAny(any=value)))
+        else:
+            raise ValueError(f"Unsupported filter op {op!r} (supported: {_SUPPORTED_FILTER_OPS})")
+    return conditions
 
 
 def _to_result(hit) -> dict:
     return {
         "score": hit.score,
         "clip_path": hit.payload.get("clip_path"),
-        "camera_id": hit.payload.get("camera_id"),
+        "source_id": hit.payload.get("source_id"),
         "start_ts": hit.payload.get("start_ts"),
         "end_ts": hit.payload.get("end_ts"),
         "has_speech": hit.payload.get("has_speech", False),
         "transcript": hit.payload.get("transcript", ""),
+        "has_text": hit.payload.get("has_text", False),
+        "ocr_text": hit.payload.get("ocr_text", ""),
+        "tags": hit.payload.get("tags", []),
+        "attributes": hit.payload.get("attributes", {}),
     }
 
 
@@ -61,8 +92,10 @@ def _rerank_by_attribute(results: list[dict], attribute: str, obj: str, top_k: i
 def search_clips(
     query: str,
     top_k: int = 5,
-    camera_id: str | None = None,
+    source_id: str | None = None,
+    filters: list[dict] | None = None,
     use_transcript_fusion: bool = False,
+    use_ocr_fusion: bool = False,
     verify_attributes: bool | None = None,
 ) -> list[dict]:
     if verify_attributes is None:
@@ -74,10 +107,14 @@ def search_clips(
     fetch_limit = max(top_k, ATTRIBUTE_VERIFICATION_POOL) if attribute_pairs else top_k
 
     client = get_client()
-    query_filter = _camera_filter(camera_id)
+    # Computed once and reused below (both for query_filter here and for
+    # the fusion branch's speech_filter_conditions) rather than calling
+    # _filter_conditions() a second time with the same arguments.
+    base_conditions = _filter_conditions(source_id, filters)
+    query_filter = Filter(must=base_conditions) if base_conditions else None
     visual_vector = embed_text(query)
 
-    if not use_transcript_fusion:
+    if not use_transcript_fusion and not use_ocr_fusion:
         # score_threshold drops hits below MIN_SIMILARITY_SCORE -- without
         # this, Qdrant always returns the top_k nearest points regardless of
         # how poor a match they are, so an out-of-distribution query
@@ -94,44 +131,61 @@ def search_clips(
         ).points
         results = [_to_result(h) for h in hits]
     else:
-        # Transcript fusion: combine the visual ranking with a ranking over
-        # the (much smaller) set of clips that have a transcript, via
-        # Reciprocal Rank Fusion. Both branches are gated by their own
-        # calibrated threshold (MIN_SIMILARITY_SCORE / MIN_TRANSCRIPT_SCORE)
-        # -- ungating the transcript branch (the original design) measurably
-        # hurt precision by letting weak/off-topic transcript matches into
-        # the fused ranking (see eval results, 2026-09-09).
-        from app.pipeline.text_embedder import embed_transcript_text
-
-        transcript_vector = embed_transcript_text(query)
+        # N-way fusion: combine the visual ranking with a ranking over
+        # each requested secondary signal (transcript and/or ocr_text),
+        # via Reciprocal Rank Fusion. Every branch is gated by its own
+        # calibrated threshold (MIN_SIMILARITY_SCORE / MIN_TRANSCRIPT_SCORE
+        # / MIN_OCR_SCORE) -- ungating a branch (the original transcript
+        # design) measurably hurt precision by letting weak/off-topic
+        # matches into the fused ranking (see eval results, 2026-09-09).
         candidate_pool = max(fetch_limit * 4, 20)
-
-        speech_filter_conditions = [
-            FieldCondition(key="has_speech", match=MatchValue(value=True))
+        prefetches = [
+            Prefetch(
+                query=visual_vector.tolist(),
+                using="visual",
+                filter=query_filter,
+                score_threshold=MIN_SIMILARITY_SCORE,
+                limit=candidate_pool,
+            ),
         ]
-        if camera_id:
-            speech_filter_conditions.append(
-                FieldCondition(key="camera_id", match=MatchValue(value=camera_id))
-            )
 
-        hits = client.query_points(
-            collection_name=QDRANT_COLLECTION,
-            prefetch=[
+        if use_transcript_fusion:
+            from app.pipeline.text_embedder import embed_transcript_text
+
+            speech_filter_conditions = [
+                FieldCondition(key="has_speech", match=MatchValue(value=True)),
+                *base_conditions,
+            ]
+            prefetches.append(
                 Prefetch(
-                    query=visual_vector.tolist(),
-                    using="visual",
-                    filter=query_filter,
-                    score_threshold=MIN_SIMILARITY_SCORE,
-                    limit=candidate_pool,
-                ),
-                Prefetch(
-                    query=transcript_vector.tolist(),
+                    query=embed_transcript_text(query).tolist(),
                     using="transcript",
                     filter=Filter(must=speech_filter_conditions),
                     score_threshold=MIN_TRANSCRIPT_SCORE,
                     limit=candidate_pool,
-                ),
-            ],
+                )
+            )
+
+        if use_ocr_fusion:
+            from app.pipeline.text_embedder import embed_text as embed_general_text
+
+            text_filter_conditions = [
+                FieldCondition(key="has_text", match=MatchValue(value=True)),
+                *base_conditions,
+            ]
+            prefetches.append(
+                Prefetch(
+                    query=embed_general_text(query).tolist(),
+                    using="ocr_text",
+                    filter=Filter(must=text_filter_conditions),
+                    score_threshold=MIN_OCR_SCORE,
+                    limit=candidate_pool,
+                )
+            )
+
+        hits = client.query_points(
+            collection_name=QDRANT_COLLECTION,
+            prefetch=prefetches,
             query=FusionQuery(fusion=Fusion.RRF),
             limit=fetch_limit,
         ).points
