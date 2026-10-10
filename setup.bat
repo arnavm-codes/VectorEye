@@ -51,7 +51,10 @@ if !HEALTHY! == 0 (
 if not defined S3_ENDPOINT set S3_ENDPOINT=http://localhost:4566
 curl -fs !S3_ENDPOINT! >nul 2>&1
 if errorlevel 1 (
-    echo warning: S3/Floci not reachable at !S3_ENDPOINT! -- start it before running the pipeline.
+    echo warning: S3/Floci not reachable at !S3_ENDPOINT! -- start it, then run "uv run python scripts/ensure_buckets.py" to create the buckets.
+) else (
+    echo === Ensuring S3 buckets exist ===
+    uv run python scripts/ensure_buckets.py || exit /b 1
 )
 
 REM Download every model's weights now (Long-CLIP, OpenAI CLIP, Whisper, the transcript
@@ -63,5 +66,5 @@ uv run python scripts\download_models.py || exit /b 1
 
 echo.
 echo Setup complete. Next steps:
-echo   1. Upload source videos to the raw-videos-cctv bucket on your S3/Floci endpoint
+echo   1. Upload source videos to the raw-videos bucket on your S3/Floci endpoint
 echo   2. Run run.bat

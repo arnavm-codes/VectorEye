@@ -69,8 +69,18 @@ cp .env.example .env   # fill in GROQ_API_KEY if you want the /chat endpoint
 docker compose up -d   # starts Qdrant on localhost:6333
 ```
 
-Storage is S3-compatible (Floci locally). Upload videos (`.mp4`/`.mov`/`.mkv`/`.avi`)
-to the `raw-videos-cctv` bucket; clips are written to the `chunks` bucket. See
+Storage is S3-compatible ([Floci](https://github.com/floci-io/floci) locally, any
+S3 store in production). To keep Floci's buckets across restarts, start it with a
+persistent data directory:
+
+```bash
+floci start --persist ~/.floci/data   # S3 on localhost:4566, data saved on disk
+```
+
+`setup.sh` (and `setup.bat`) create the two buckets if they're missing — re-run
+`uv run python scripts/ensure_buckets.py` any time, it's idempotent. Upload videos
+(`.mp4`/`.mov`/`.mkv`/`.avi`) to the `raw-videos` bucket; clips are written to the
+`chunks` bucket. See
 `.env.example` for the endpoint/credential/bucket settings (`S3_ENDPOINT`,
 `S3_PUBLIC_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`,
 `S3_VERIFY_SSL`, `RAW_VIDEOS_BUCKET`, `CLIPS_BUCKET`, `PRESIGN_EXPIRY_SECONDS`,
@@ -86,7 +96,7 @@ the Qdrant collection and reindex (old points hold local filesystem paths).
 uv run python scripts/run_pipeline.py
 ```
 
-This chunks every video in the `raw-videos-cctv` bucket into the `chunks`
+This chunks every video in the `raw-videos` bucket into the `chunks`
 bucket, embeds each clip with CLIP, and upserts them into the Qdrant
 collection. Embedding is incremental (already-indexed clips are skipped); pass
 `--reindex-all` to re-embed everything.

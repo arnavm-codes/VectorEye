@@ -23,7 +23,7 @@ S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "test")
 S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "test")
 S3_REGION = os.environ.get("S3_REGION", "us-east-1")
 S3_VERIFY_SSL = os.environ.get("S3_VERIFY_SSL", "true").lower() not in {"0", "false", "no"}
-RAW_VIDEOS_BUCKET = os.environ.get("RAW_VIDEOS_BUCKET", "raw-videos-cctv")
+RAW_VIDEOS_BUCKET = os.environ.get("RAW_VIDEOS_BUCKET", "raw-videos")
 CLIPS_BUCKET = os.environ.get("CLIPS_BUCKET", "chunks")
 PRESIGN_EXPIRY_SECONDS = int(os.environ.get("PRESIGN_EXPIRY_SECONDS", "3600"))
 

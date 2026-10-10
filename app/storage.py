@@ -145,6 +145,22 @@ def local_clip(key: str):
         yield download(CLIPS_BUCKET, key, Path(tmp) / Path(key).name)
 
 
+def ensure_buckets() -> list[str]:
+    """Create the raw-videos and clips buckets if they don't exist yet.
+    Idempotent: existing buckets are left untouched. Returns the names created."""
+    s3 = get_s3()
+    created = []
+    for bucket in (RAW_VIDEOS_BUCKET, CLIPS_BUCKET):
+        try:
+            s3.head_bucket(Bucket=bucket)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") not in {"404", "NoSuchBucket", "NotFound"}:
+                raise
+            s3.create_bucket(Bucket=bucket)
+            created.append(bucket)
+    return created
+
+
 def s3_healthy() -> tuple[bool, str]:
     try:
         buckets = {b["Name"] for b in _make_client(S3_ENDPOINT, _HEALTH_CONFIG).list_buckets().get("Buckets", [])}

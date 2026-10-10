@@ -2,7 +2,7 @@
 
 Usage: uv run python scripts/run_pipeline.py [--reindex-all]
 Prereq: Qdrant running (docker compose up -d), Floci/S3 reachable, videos in the
-raw-videos-cctv bucket. Clips are uploaded to the chunks bucket; incremental by
+raw-videos bucket. Clips are uploaded to the chunks bucket; incremental by
 default (--reindex-all re-embeds clips that are already indexed).
 """
 
@@ -24,7 +24,7 @@ def main():
     print("=== Step 1: chunking raw videos ===")
     clips = chunk_all()
     if not clips:
-        print("No videos found in the raw-videos-cctv bucket. Upload videos there and re-run.")
+        print("No videos found in the raw-videos bucket. Upload videos there and re-run.")
         return
 
     print("\n=== Step 2: embedding + indexing into Qdrant ===")

@@ -5,7 +5,7 @@ Run: uv run uvicorn app.main:app --reload
 
 import threading
 import uuid
-from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, Literal
 
 from botocore.exceptions import ClientError
@@ -154,7 +154,7 @@ def chat(req: ChatRequest):
 
 
 class IndexRequest(BaseModel):
-    video_key: str | None = None   # None = process every video in raw-videos-cctv
+    video_key: str | None = None   # None = process every video in raw-videos
     reindex_all: bool = False      # True = re-embed clips even if already indexed
 
 
@@ -170,7 +170,7 @@ def _run_index_job(job_id: str, req: IndexRequest):
         _jobs[job_id]["status"] = "chunking"
         clips = chunk_all(video_key=req.video_key)
         _jobs[job_id].update(status="indexing", clips_created=len(clips))
-        video_stem = Path(req.video_key).stem if req.video_key else None
+        video_stem = PurePosixPath(req.video_key).with_suffix("").as_posix() if req.video_key else None
         indexed = index_clips(only_new=not req.reindex_all, video_stem=video_stem)
         _jobs[job_id].update(status="done", clips_indexed=indexed)
     except Exception as exc:  # noqa: BLE001
@@ -310,7 +310,7 @@ def list_sources():
     return {"sources": sources_pipeline.list_sources()}
 
 
-@app.get("/sources/{source_id}")
+@app.get("/sources/{source_id:path}")
 def get_source(source_id: str):
     source = sources_pipeline.get_source(source_id)
     if source is None:
@@ -318,7 +318,7 @@ def get_source(source_id: str):
     return source
 
 
-@app.delete("/sources/{source_id}")
+@app.delete("/sources/{source_id:path}")
 def delete_source(source_id: str):
     """Deletes every clip for `source_id`, both from Qdrant and the clips bucket.
     See app.pipeline.sources.delete_source for the known gap around
@@ -340,10 +340,10 @@ def retention_sweep():
     return {"deleted": retention_pipeline.sweep_once()}
 
 
-@app.get("/clip/{clip_filename}")
-def get_clip(clip_filename: str):
+@app.get("/clip/{clip_key:path}")
+def get_clip(clip_key: str):
     try:
-        obj = storage.open_clip_stream(clip_filename)
+        obj = storage.open_clip_stream(clip_key)
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
             raise HTTPException(status_code=404, detail="Clip not found")
