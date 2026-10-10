@@ -14,7 +14,7 @@ produced it.
 
 import subprocess
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from app import storage
 from app.config import CHUNK_OVERLAP_SECONDS, CLIP_DURATION_SECONDS, RAW_VIDEOS_BUCKET
@@ -99,8 +99,13 @@ def chunk_video_key(video_key: str) -> list[str]:
         tmp_dir = Path(tmp)
         local_video = storage.download(RAW_VIDEOS_BUCKET, video_key, tmp_dir / Path(video_key).name)
         clips = chunk_video(local_video, tmp_dir / "clips")
+        # Clips keep the raw video's own prefix (cam1/clip.mp4 -> cam1/clip_clip000000.mp4).
+        # Keyed by file name alone, two videos with the same name under different
+        # prefixes (e.g. one 00001.mp4 per camera) would overwrite each other's clips.
+        prefix = PurePosixPath(video_key).parent
         for clip in clips:
-            uploaded.append(storage.upload_clip(clip))
+            key = clip.name if str(prefix) == "." else f"{prefix.as_posix()}/{clip.name}"
+            uploaded.append(storage.upload_clip(clip, key))
     print(f"  -> {len(uploaded)} clips uploaded")
     return uploaded
 

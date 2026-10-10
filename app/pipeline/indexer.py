@@ -21,7 +21,7 @@ source_id grouping key.
 import re
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import PurePosixPath
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, VectorParams
@@ -163,10 +163,14 @@ def ensure_collection(client: QdrantClient):
         )
 
 
-def _parse_clip_metadata(clip_path: Path) -> dict:
-    match = _CLIP_NAME_RE.match(clip_path.stem)
+def _parse_clip_metadata(clip_key: str) -> dict:
+    # The whole key minus its extension, prefix included, so the derived
+    # source_id is unique per video even when file names repeat across
+    # prefixes (cam1/clip_clip000000.mp4 -> source_id "cam1/clip").
+    stem = PurePosixPath(clip_key).with_suffix("").as_posix()
+    match = _CLIP_NAME_RE.match(stem)
     if not match:
-        return {"source_id": clip_path.stem, "start_ts": 0, "end_ts": CLIP_DURATION_SECONDS}
+        return {"source_id": stem, "start_ts": 0, "end_ts": CLIP_DURATION_SECONDS}
     # The number in the filename is the clip's actual start second in the
     # source video (see chunker.py) -- not a sequential index -- since two
     # overlapping chunking passes (offsets 0 and CHUNK_OVERLAP_SECONDS) share
@@ -214,7 +218,7 @@ def index_clips(
     if keys is None:
         keys = storage.list_clips()
     if video_stem is not None:
-        keys = [k for k in keys if _parse_clip_metadata(Path(k))["source_id"] == video_stem]
+        keys = [k for k in keys if _parse_clip_metadata(k)["source_id"] == video_stem]
     if only_new and keys:
         existing: set[str] = set()
         for i in range(0, len(keys), 256):  # batch to keep requests small on large libraries
@@ -270,7 +274,7 @@ def index_clips(
                     print(f"  -> on-screen text detected: {ocr_text!r}")
                     vectors["ocr_text"] = embed_general_text(ocr_text).tolist()
 
-        meta = _parse_clip_metadata(Path(key))
+        meta = _parse_clip_metadata(key)
         # Truthy check, not `is not None` -- an empty string must be treated
         # the same as omitted (fall back to the filename-derived source_id),
         # matching search.py's `_filter_conditions()` check on the other side.
