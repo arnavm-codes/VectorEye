@@ -23,6 +23,17 @@ if [ ! -f .env ]; then
     echo "Fill in GROQ_API_KEY in .env if you want the Groq chat layer -- not required for plain search."
 fi
 
+# Clip URLs are HMAC-signed with this; the API refuses to start without it.
+if ! grep -qE '^CLIP_SIGNING_SECRET=.+' .env; then
+    echo "=== Generating CLIP_SIGNING_SECRET in .env ==="
+    SECRET="$(uv run python -c 'import secrets; print(secrets.token_hex(32))')"
+    if grep -qE '^CLIP_SIGNING_SECRET=' .env; then
+        sed -i "s/^CLIP_SIGNING_SECRET=.*/CLIP_SIGNING_SECRET=$SECRET/" .env
+    else
+        printf '\nCLIP_SIGNING_SECRET=%s\n' "$SECRET" >> .env
+    fi
+fi
+
 echo "=== Starting Qdrant (docker compose up -d) ==="
 docker compose up -d
 

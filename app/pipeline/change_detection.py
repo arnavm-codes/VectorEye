@@ -52,6 +52,14 @@ def has_changed(video_key: str) -> bool:
     return _load_state().get(_state_key(video_key)) != storage.raw_video_fingerprint(video_key)
 
 
+def forget(video_key: str) -> None:
+    """Drops `video_key`'s fingerprint so the next ingest re-processes it instead of
+    skipping it as unchanged -- call when its indexed clips are deleted."""
+    state = _load_state()
+    if state.pop(_state_key(video_key), None) is not None:
+        _save_state(state)
+
+
 def mark_processed(video_key: str) -> None:
     """Records `video_key`'s current fingerprint as processed. Call only
     after successfully chunking+indexing it -- marking a failed attempt as

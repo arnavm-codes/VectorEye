@@ -8,8 +8,8 @@ cleanup -- this module is that cleanup logic promoted to a real API.
 
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-from app import storage
 from app.config import QDRANT_COLLECTION
+from app.pipeline.change_detection import forget
 from app.pipeline.indexer import get_client
 
 
@@ -86,6 +86,7 @@ def get_source(source_id: str) -> dict | None:
     attributes = {}
     timestamps = []
     clip_paths = []
+    video_keys = set()
     for p in points:
         tags.update(p.payload.get("tags", []))
         attributes.update(p.payload.get("attributes", {}))
@@ -93,6 +94,7 @@ def get_source(source_id: str) -> dict | None:
         if ts:
             timestamps.append(ts)
         clip_paths.append(p.payload.get("clip_path"))
+        video_keys.add(p.payload.get("video_key"))
 
     return {
         "source_id": source_id,
@@ -101,24 +103,18 @@ def get_source(source_id: str) -> dict | None:
         "attributes": attributes,
         "first_indexed_at": min(timestamps) if timestamps else None,
         "last_indexed_at": max(timestamps) if timestamps else None,
+        "video_keys": sorted(k for k in video_keys if k),
         "clip_paths": sorted(clip_paths)[:100],
     }
 
 
 def delete_source(source_id: str) -> int:
-    """Deletes every point for `source_id` from Qdrant, plus a best-effort
-    delete of the underlying clip objects in the clips bucket. Returns the number of
-    clips deleted (0 if the source doesn't exist).
+    """Deletes every point for `source_id` from Qdrant and returns how many were removed
+    (0 if the source doesn't exist). Raw videos are never touched -- they are the only copy
+    of the footage -- and there are no stored clips to delete.
 
-    Known gap, not solved here: does NOT clear
-    app.pipeline.change_detection's fingerprint for whatever raw video(s)
-    produced these clips. If that raw video is later re-ingested unchanged,
-    change detection will (correctly, by its own logic) skip it -- silently
-    leaving the source deleted rather than restored, unless the caller
-    passes force=True on a fresh /ingest call. Not fixed here because the
-    raw video's path isn't tracked anywhere on the clip payload; doing this
-    properly would mean threading a provenance field through from
-    ingestion, a bigger change than this phase's scope."""
+    Also resets change detection for the raw video(s) behind those points, so ingesting the
+    same unchanged video again re-indexes it instead of being skipped as "already done"."""
     client = get_client()
     if not client.collection_exists(QDRANT_COLLECTION):
         return 0
@@ -128,8 +124,6 @@ def delete_source(source_id: str) -> int:
         return 0
 
     client.delete(collection_name=QDRANT_COLLECTION, points_selector=_source_filter(source_id))
-    for p in points:
-        clip_path = p.payload.get("clip_path")
-        if clip_path:
-            storage.delete_clip(clip_path)
+    for video_key in {p.payload.get("video_key") for p in points} - {None}:
+        forget(video_key)
     return len(points)

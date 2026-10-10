@@ -1,7 +1,7 @@
-"""Create the S3 buckets VectorEye needs (raw videos + clips) if they're missing.
+"""Create the S3 bucket VectorEye needs (raw videos) if it's missing.
 
 Usage: uv run python scripts/ensure_buckets.py
-Safe to re-run: existing buckets are left alone. Uses the S3_* / *_BUCKET
+Safe to re-run: an existing bucket is left alone. Uses the S3_* / *_BUCKET
 settings from .env, so it works against Floci or any S3-compatible store.
 """
 
@@ -11,12 +11,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import storage
-from app.config import CLIPS_BUCKET, RAW_VIDEOS_BUCKET
+from app.config import RAW_VIDEOS_BUCKET
 
 
 def main():
     created = storage.ensure_buckets()
-    for bucket in (RAW_VIDEOS_BUCKET, CLIPS_BUCKET):
+    for bucket in (RAW_VIDEOS_BUCKET,):
         print(f"  {bucket}: {'created' if bucket in created else 'already exists'}")
 
 

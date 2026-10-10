@@ -5,12 +5,10 @@ Run: uv run uvicorn app.main:app --reload
 
 import threading
 import uuid
-from pathlib import PurePosixPath
 from typing import Any, Literal
 
-from botocore.exceptions import ClientError
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app import storage
@@ -28,6 +26,12 @@ from app.pipeline import sources as sources_pipeline
 from app.pipeline import watch as watch_pipeline
 
 app = FastAPI(title="VectorEye API")
+
+
+@app.on_event("startup")
+async def _check_clip_signing():
+    # Fail at boot, not on the first search: clip URLs can't be signed without the secret.
+    clip_service.check_configured()
 
 
 @app.on_event("startup")
@@ -73,7 +77,7 @@ class IngestRequest(BaseModel):
     # multipart upload isn't supported (a real gap, not silently assumed
     # away) -- put the file in the bucket first.
     video_key: str
-    # None falls back to index_clips()'s legacy filename-parsing convention
+    # None falls back to a source_id derived from the video's key
     # (see app.pipeline.ingest.create_job) -- lets a batch prefix-scan
     # ingest each video under its own filename-derived source_id instead of
     # forcing one shared value onto every video in the batch.
@@ -156,7 +160,7 @@ def chat(req: ChatRequest):
 
 class IndexRequest(BaseModel):
     video_key: str | None = None   # None = process every video in raw-videos
-    reindex_all: bool = False      # True = re-embed clips even if already indexed
+    reindex_all: bool = False      # True = re-process videos even if unchanged since their last index
 
 
 _jobs: dict[str, dict] = {}
@@ -164,24 +168,36 @@ _job_lock = threading.Lock()
 
 
 def _run_index_job(job_id: str, req: IndexRequest):
-    from app.pipeline.chunker import chunk_all
-    from app.pipeline.indexer import index_clips
-
+    """Bulk (re)index: runs the same per-video job as /ingest for every raw video. Unchanged
+    videos are skipped unless `reindex_all`; a re-indexed video keeps the source_id, tags and
+    attributes it was originally ingested with."""
+    job = _jobs[job_id]
     try:
-        _jobs[job_id]["status"] = "chunking"
-        clips = chunk_all(video_key=req.video_key)
-        _jobs[job_id].update(status="indexing", clips_created=len(clips))
-        video_stem = PurePosixPath(req.video_key).with_suffix("").as_posix() if req.video_key else None
-        indexed = index_clips(only_new=not req.reindex_all, video_stem=video_stem)
-        _jobs[job_id].update(status="done", clips_indexed=indexed)
+        video_keys = [req.video_key] if req.video_key else storage.list_raw_videos()
+        job.update(status="indexing", videos_total=len(video_keys), videos_indexed=0,
+                   videos_skipped=0, clips_indexed=0, errors=[])
+        for key in video_keys:
+            sub_id = ingest_pipeline.create_job(key, None, None, None)
+            ingest_pipeline.run_job(sub_id, key, None, None, None, force=req.reindex_all)
+            result = ingest_pipeline.get_job(sub_id)
+            if result["status"] == "done":
+                job["videos_indexed"] += 1
+                job["clips_indexed"] += result["clips_indexed"]
+            elif result["status"] == "skipped":
+                job["videos_skipped"] += 1
+            else:
+                job["errors"].append({"video_key": key, "error": result["error"]})
+        job["status"] = "error" if job["errors"] else "done"
     except Exception as exc:  # noqa: BLE001
-        _jobs[job_id].update(status="error", error=str(exc))
+        job.update(status="error", error=str(exc))
     finally:
         _job_lock.release()
 
 
 @app.post("/index", status_code=202)
 def start_index(req: IndexRequest, background: BackgroundTasks):
+    if req.video_key and not storage.raw_video_exists(req.video_key):
+        raise HTTPException(status_code=404, detail=f"video_key not found in raw-videos bucket: {req.video_key}")
     if not _job_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="An indexing job is already running.")
     job_id = str(uuid.uuid4())
@@ -356,14 +372,3 @@ def get_clip_window(video_key: str, start: int, end: int, exp: int, sig: str):
     except clip_service.ClipError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600"})
-
-
-@app.get("/clip/{clip_key:path}")
-def get_clip(clip_key: str):
-    try:
-        obj = storage.open_clip_stream(clip_key)
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
-            raise HTTPException(status_code=404, detail="Clip not found")
-        raise
-    return StreamingResponse(obj["Body"].iter_chunks(chunk_size=65536), media_type="video/mp4")

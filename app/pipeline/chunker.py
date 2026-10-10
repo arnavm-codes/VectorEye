@@ -14,12 +14,14 @@ produced it.
 
 import subprocess
 import tempfile
-from pathlib import Path, PurePosixPath
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 from app import storage
 from app.config import CHUNK_OVERLAP_SECONDS, CLIP_DURATION_SECONDS, RAW_VIDEOS_BUCKET
 
-_START_TS_DIGITS = 6  # supports source videos up to ~11.5 days
+START_TS_DIGITS = 6  # supports source videos up to ~11.5 days
 
 
 def _run_segment_pass(video_path: Path, out_dir: Path, clip_seconds: int, offset_seconds: int) -> list[Path]:
@@ -67,7 +69,7 @@ def _run_segment_pass(video_path: Path, out_dir: Path, clip_seconds: int, offset
     final_clips = []
     for seq, tmp_path in enumerate(tmp_clips):
         start_ts = offset_seconds + seq * clip_seconds
-        final_path = out_dir / f"{stem}_clip{start_ts:0{_START_TS_DIGITS}d}.mp4"
+        final_path = out_dir / f"{stem}_clip{start_ts:0{START_TS_DIGITS}d}.mp4"
         tmp_path.rename(final_path)
         final_clips.append(final_path)
     return final_clips
@@ -89,37 +91,17 @@ def chunk_video(
     return sorted(clips)
 
 
-def chunk_video_key(video_key: str) -> list[str]:
-    """Chunk one raw video (an object key in the raw-videos bucket) into clips
-    uploaded to the clips bucket. Returns the uploaded clip keys. Temp files
-    are always cleaned up."""
-    print(f"Chunking s3://{RAW_VIDEOS_BUCKET}/{video_key} ...")
-    uploaded: list[str] = []
+@contextmanager
+def cut_video(video_key: str) -> Iterator[list[Path]]:
+    """Cut one raw video (an object key in the raw-videos bucket) into clips in a temp
+    directory and yield their local paths. Nothing is uploaded: the clips exist only for
+    embedding, and everything is deleted on exit."""
+    print(f"Cutting s3://{RAW_VIDEOS_BUCKET}/{video_key} ...")
     with tempfile.TemporaryDirectory(prefix="vectoreye_chunk_") as tmp:
         tmp_dir = Path(tmp)
         local_video = storage.download(RAW_VIDEOS_BUCKET, video_key, tmp_dir / Path(video_key).name)
         clips = chunk_video(local_video, tmp_dir / "clips")
-        # Clips keep the raw video's own prefix (cam1/clip.mp4 -> cam1/clip_clip000000.mp4).
-        # Keyed by file name alone, two videos with the same name under different
-        # prefixes (e.g. one 00001.mp4 per camera) would overwrite each other's clips.
-        prefix = PurePosixPath(video_key).parent
-        for clip in clips:
-            key = clip.name if str(prefix) == "." else f"{prefix.as_posix()}/{clip.name}"
-            uploaded.append(storage.upload_clip(clip, key))
-    print(f"  -> {len(uploaded)} clips uploaded")
-    return uploaded
+        print(f"  -> {len(clips)} clips")
+        yield clips
 
 
-def chunk_all(video_key: str | None = None) -> list[str]:
-    """Chunk raw videos from the raw-videos bucket into clips uploaded to the
-    clips bucket. Processes `video_key` only if given, otherwise every video.
-    Returns the uploaded clip keys."""
-    video_keys = [video_key] if video_key else storage.list_raw_videos()
-    uploaded: list[str] = []
-    for key in video_keys:
-        uploaded.extend(chunk_video_key(key))
-    return uploaded
-
-
-if __name__ == "__main__":
-    chunk_all()

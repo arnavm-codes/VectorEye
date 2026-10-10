@@ -17,7 +17,6 @@ whole seconds -- exactly what each Qdrant point already stores.
 import hashlib
 import hmac
 import os
-import secrets
 import subprocess
 import threading
 import time
@@ -38,13 +37,28 @@ from app.config import (
     PRESIGN_EXPIRY_SECONDS,
 )
 
-# Empty only in stored mode, where nothing is signed.
-_SECRET = CLIP_SIGNING_SECRET.encode() or secrets.token_bytes(32)
 
 _MIN_CLIP_BYTES = 2048  # ffmpeg exits 0 with a stub file when the window is past the end of the video
 _cut_slots = threading.Semaphore(CLIP_CUT_CONCURRENCY)
 _key_locks = [threading.Lock() for _ in range(64)]  # striped: same clip -> same lock, bounded memory
 _evict_lock = threading.Lock()
+
+
+class ClipConfigError(RuntimeError):
+    """CLIP_SIGNING_SECRET is not set."""
+
+
+def check_configured() -> None:
+    """Fail fast (API startup) instead of on the first search."""
+    _secret()
+
+
+def _secret() -> bytes:
+    if not CLIP_SIGNING_SECRET:
+        raise ClipConfigError(
+            "CLIP_SIGNING_SECRET is not set. Run setup.sh, or set it in .env (e.g. `openssl rand -hex 32`)."
+        )
+    return CLIP_SIGNING_SECRET.encode()
 
 
 class ClipInvalid(ValueError):
@@ -61,7 +75,7 @@ class ClipError(RuntimeError):
 
 def _signature(video_key: str, start: int, end: int, exp: int) -> str:
     msg = f"{video_key}\n{start}\n{end}\n{exp}".encode()
-    return hmac.new(_SECRET, msg, hashlib.sha256).hexdigest()
+    return hmac.new(_secret(), msg, hashlib.sha256).hexdigest()
 
 
 def signed_clip_url(video_key: str, start: int, end: int, expires_in: int = PRESIGN_EXPIRY_SECONDS) -> str:

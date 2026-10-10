@@ -25,6 +25,13 @@ if not exist .env (
     echo Fill in GROQ_API_KEY in .env if you want the Groq chat layer -- not required for plain search.
 )
 
+REM Clip URLs are HMAC-signed with this; the API refuses to start without it.
+findstr /b /r /c:"CLIP_SIGNING_SECRET=." .env >nul 2>&1
+if errorlevel 1 (
+    echo === Generating CLIP_SIGNING_SECRET in .env ===
+    uv run python -c "import re,secrets,pathlib; p=pathlib.Path('.env'); s=p.read_text(); k='CLIP_SIGNING_SECRET='+secrets.token_hex(32); p.write_text(re.sub(r'(?m)^CLIP_SIGNING_SECRET=.*$',k,s) if re.search(r'(?m)^CLIP_SIGNING_SECRET=',s) else s.rstrip()+'\n'+k+'\n')" || exit /b 1
+)
+
 echo === Starting Qdrant ^(docker compose up -d^) ===
 docker compose up -d || exit /b 1
 

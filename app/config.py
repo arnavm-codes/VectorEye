@@ -17,31 +17,24 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 # --- Object storage (Floci S3 locally; any S3-compatible store in deployment) ---
 S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://localhost:4566")
-# Endpoint embedded in presigned URLs -- must be reachable by whoever plays the clip.
-S3_PUBLIC_ENDPOINT = os.environ.get("S3_PUBLIC_ENDPOINT", S3_ENDPOINT)
 S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "test")
 S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "test")
 S3_REGION = os.environ.get("S3_REGION", "us-east-1")
 S3_VERIFY_SSL = os.environ.get("S3_VERIFY_SSL", "true").lower() not in {"0", "false", "no"}
 RAW_VIDEOS_BUCKET = os.environ.get("RAW_VIDEOS_BUCKET", "raw-videos")
-CLIPS_BUCKET = os.environ.get("CLIPS_BUCKET", "chunks")
 PRESIGN_EXPIRY_SECONDS = int(os.environ.get("PRESIGN_EXPIRY_SECONDS", "3600"))
 
 # --- Clip serving ---
-# "stored": clips are pre-cut and kept in CLIPS_BUCKET; search returns a presigned S3 URL.
-# "dynamic": nothing is stored -- the requested window is cut from the raw video with
-# ffmpeg on demand (app/pipeline/clip_service.py) and cached on local disk.
-CLIP_SERVING = os.environ.get("CLIP_SERVING", "stored").lower()
-if CLIP_SERVING not in {"stored", "dynamic"}:
-    raise ValueError(f"Unknown CLIP_SERVING {CLIP_SERVING!r} (expected 'stored' or 'dynamic')")
+# Clips are never stored: each search hit's clip_url points at GET /clip, which cuts the
+# window out of the raw video with ffmpeg on demand (app/pipeline/clip_service.py) and
+# caches it on local disk. PRESIGN_EXPIRY_SECONDS is how long those URLs stay valid.
 # Base URL clients use to reach this API; embedded in dynamic-mode clip URLs.
 API_PUBLIC_URL = os.environ.get("API_PUBLIC_URL", f"http://localhost:{os.environ.get('VECTOREYE_PORT', '9100')}").rstrip("/")
-# Dynamic clip URLs are HMAC-signed so a URL only ever exposes the matched window, never
-# arbitrary parts of a raw recording. Required in dynamic mode: every process that builds
-# search results (the API, the Streamlit UI) must sign with the same secret the API verifies with.
+# Clip URLs are HMAC-signed so a URL only ever exposes the matched window, never arbitrary
+# parts of a raw recording. Required: every process that builds search results (the API,
+# the Streamlit UI) must sign with the same secret the API verifies with. setup.sh generates
+# one; the API refuses to start without it.
 CLIP_SIGNING_SECRET = os.environ.get("CLIP_SIGNING_SECRET", "")
-if CLIP_SERVING == "dynamic" and not CLIP_SIGNING_SECRET:
-    raise ValueError("CLIP_SERVING=dynamic requires CLIP_SIGNING_SECRET to be set (see .env.example)")
 CLIP_CACHE_DIR = Path(os.environ.get("CLIP_CACHE_DIR", PROJECT_ROOT / "data" / "clip_cache"))
 CLIP_CACHE_MAX_MB = int(os.environ.get("CLIP_CACHE_MAX_MB", "2048"))
 CLIP_CUT_CONCURRENCY = int(os.environ.get("CLIP_CUT_CONCURRENCY", "2"))

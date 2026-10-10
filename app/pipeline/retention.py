@@ -19,8 +19,11 @@ a separate opt-in flag the way an unattended recurring one does.
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from app import storage
+
+from qdrant_client.models import FieldCondition, Filter, MatchValue
+
 from app.config import QDRANT_COLLECTION
+from app.pipeline.change_detection import forget
 from app.pipeline.indexer import get_client
 
 
@@ -56,10 +59,16 @@ def sweep_once() -> int:
         return 0
 
     client.delete(collection_name=QDRANT_COLLECTION, points_selector=[p.id for p in to_delete])
-    for p in to_delete:
-        clip_path = p.payload.get("clip_path")
-        if clip_path:
-            storage.delete_clip(clip_path)
+    # Raw videos are never deleted (they're the only copy of the footage). A video left with
+    # no indexed clips at all is forgotten by change detection, so re-ingesting it later
+    # isn't skipped as "unchanged".
+    for video_key in {p.payload.get("video_key") for p in to_delete} - {None}:
+        remaining = client.count(
+            QDRANT_COLLECTION,
+            count_filter=Filter(must=[FieldCondition(key="video_key", match=MatchValue(value=video_key))]),
+        ).count
+        if remaining == 0:
+            forget(video_key)
     return len(to_delete)
 
 

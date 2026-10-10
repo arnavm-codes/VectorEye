@@ -13,7 +13,7 @@ A plug-and-play semantic search engine for **any video library** —
 surveillance/CCTV archives, media libraries, sports or event footage,
 dashcam/bodycam recordings, personal video collections, anything where you
 have a pile of video and want to find the moment matching a description.
-Recordings are chunked into short clips, embedded with CLIP into a shared
+Recordings are cut into short clips, embedded with CLIP into a shared
 text-video vector space, and searched via natural-language query +
 similarity search in Qdrant. **No LLM ever watches or reasons about video
 content** — retrieval is pure nearest-neighbor over embeddings, so it scales
@@ -77,18 +77,25 @@ persistent data directory:
 floci start --persist ~/.floci/data   # S3 on localhost:4566, data saved on disk
 ```
 
-`setup.sh` (and `setup.bat`) create the two buckets if they're missing — re-run
-`uv run python scripts/ensure_buckets.py` any time, it's idempotent. Upload videos
-(`.mp4`/`.mov`/`.mkv`/`.avi`) to the `raw-videos` bucket; clips are written to the
-`chunks` bucket. See
-`.env.example` for the endpoint/credential/bucket settings (`S3_ENDPOINT`,
-`S3_PUBLIC_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`,
-`S3_VERIFY_SSL`, `RAW_VIDEOS_BUCKET`, `CLIPS_BUCKET`, `PRESIGN_EXPIRY_SECONDS`,
-`VECTOREYE_PORT`).
+`setup.sh` (and `setup.bat`) create the `raw-videos` bucket if it's missing — re-run
+`uv run python scripts/ensure_buckets.py` any time, it's idempotent — and generate a
+`CLIP_SIGNING_SECRET` in `.env`. Upload videos (`.mp4`/`.mov`/`.mkv`/`.avi`) to the
+`raw-videos` bucket. That bucket is the only thing stored in S3: clips are never saved,
+they are cut from the raw video on demand (see "Clips" below). See `.env.example` for the
+endpoint/credential/bucket settings (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`,
+`S3_REGION`, `S3_VERIFY_SSL`, `RAW_VIDEOS_BUCKET`, `PRESIGN_EXPIRY_SECONDS`,
+`CLIP_SIGNING_SECRET`, `VECTOREYE_PORT`).
 
-The `clip_path` payload field in Qdrant is the clip's **S3 object key** in the
-`chunks` bucket. If you are upgrading from the local-directory version, delete
-the Qdrant collection and reindex (old points hold local filesystem paths).
+Each Qdrant point records the `video_key` it came from (the object key in `raw-videos`) and
+the clip's `start_ts`/`end_ts` inside that video. `clip_path` is a virtual name
+(`<video key minus extension>_clip<start>.mp4`) kept for labelling; no object by that name
+exists.
+
+**Upgrading from the version that stored clips in a `chunks` bucket:** run
+`uv run python scripts/backfill_video_key.py --apply` once to add `video_key` to existing
+points (no re-embedding), check that search results play, then reclaim the space with
+`uv run python scripts/cleanup_chunks.py --apply` (dry run without `--apply`). If you are
+upgrading from the local-directory version, delete the Qdrant collection and reindex.
 
 ## Run the pipeline
 
@@ -96,10 +103,11 @@ the Qdrant collection and reindex (old points hold local filesystem paths).
 uv run python scripts/run_pipeline.py
 ```
 
-This chunks every video in the `raw-videos` bucket into the `chunks`
-bucket, embeds each clip with CLIP, and upserts them into the Qdrant
-collection. Embedding is incremental (already-indexed clips are skipped); pass
-`--reindex-all` to re-embed everything.
+This cuts every video in the `raw-videos` bucket into 10 s clips in a temp directory,
+embeds each clip with CLIP, and replaces that video's points in Qdrant; the clips are then
+thrown away. Videos unchanged since their last index are skipped; pass `--reindex-all` to
+re-process them anyway (a video keeps the `source_id`, tags and attributes it was ingested
+with). The same job is available as `POST /index`.
 
 ## Streamlit demo UI
 
@@ -151,7 +159,7 @@ progress:
 
 ```bash
 curl localhost:9100/ingest/<job_id>
-# {"status": "embedding_indexing", ...}   -> then "done" or "failed"
+# {"status": "indexing", ...}   -> then "done", "failed" or "skipped"
 ```
 
 A video that's already been ingested and hasn't changed since is
@@ -245,37 +253,32 @@ curl -X POST localhost:9100/chat -H "Content-Type: application/json" -d '{
 }'
 ```
 
-Each search result carries `clip_url` (a presigned URL, signed against
-`S3_PUBLIC_ENDPOINT`) for playback; `clip_path` is the clip's S3 key. As a
-fallback, `/clip/{key}` proxies the clip from S3:
+### Clips: cut on demand, never stored
 
-```bash
-curl localhost:9100/clip/front-gate-camera_clip000010.mp4 --output clip.mp4
-```
+Each search result carries `clip_url`, a link to `GET /clip?video_key=&start=&end=&exp=&sig=`,
+which cuts that window out of the raw video with ffmpeg and caches the result on local disk
+(`CLIP_CACHE_DIR`, trimmed to `CLIP_CACHE_MAX_MB`). The cut is re-encoded to H.264/AAC, so
+`.mkv`/`.avi`/HEVC footage plays in a browser and the clip starts on the exact frame even
+for long-GOP footage. ffmpeg reads the raw video over HTTP range requests, so the whole
+recording is never downloaded. A first request takes about a second; repeats are served from
+the cache with `Range` support for seeking.
 
-### Clip serving: stored or dynamic
-
-`CLIP_SERVING=stored` (default) keeps pre-cut clips in the `chunks` bucket and returns
-presigned S3 URLs. `CLIP_SERVING=dynamic` stores no clips at all: each search result's
-`clip_url` points at `GET /clip?video_key=&start=&end=&exp=&sig=`, which cuts that window out
-of the raw video with ffmpeg on demand (re-encoded to H.264/AAC, so `.mkv`/`.avi`/HEVC
-footage plays in a browser) and caches it on local disk (`CLIP_CACHE_DIR`, trimmed to
-`CLIP_CACHE_MAX_MB`). URLs are HMAC-signed and expiring and valid for that one window only,
-so they never expose the rest of a recording. Dynamic mode needs `CLIP_SIGNING_SECRET`
-(shared by the API and the Streamlit UI) and the API reachable at `API_PUBLIC_URL`.
-Points indexed before `video_key` existed need `uv run python scripts/backfill_video_key.py --apply`
-once.
+URLs are HMAC-signed with `CLIP_SIGNING_SECRET` and expire after `PRESIGN_EXPIRY_SECONDS`,
+and each is valid for its one window only — a link never exposes the rest of a recording.
+The API and the Streamlit UI must share the secret, the API refuses to start without it,
+and it must be reachable at `API_PUBLIC_URL` (default `http://localhost:9100`).
 
 ### 3. Bulk indexing and health
 
 ```bash
 curl localhost:9100/health        # {"status": "ok"|"degraded", "s3": ..., "qdrant": ...}
 curl -X POST localhost:9100/index -H "Content-Type: application/json" -d '{"video_key": null, "reindex_all": false}'
-curl localhost:9100/index/<job_id>   # queued / chunking / indexing / done / error
+curl localhost:9100/index/<job_id>   # queued / indexing / done / error
 ```
 
-`/index` chunks every video in the raw-videos bucket (or just `video_key`) and
-indexes the clips as one background job (202; 409 if one is already running).
+`/index` (re)indexes every video in the raw-videos bucket (or just `video_key`) as one
+background job (202; 409 if one is already running; 404 for an unknown `video_key`). Unchanged
+videos are skipped unless `reindex_all` is set.
 Don't run it during live search traffic: it shares the API process's CPU.
 
 ### 4. See what's indexed, and clean it up
@@ -283,7 +286,7 @@ Don't run it during live search traffic: it shares the API process's CPU.
 ```bash
 curl localhost:9100/sources               # every source_id, with clip counts
 curl localhost:9100/sources/<source_id>   # detail for one source
-curl -X DELETE localhost:9100/sources/<source_id>   # delete it (Qdrant + clips bucket)
+curl -X DELETE localhost:9100/sources/<source_id>   # delete its points (raw videos are never touched)
 ```
 
 For a source that should auto-expire (a CCTV rolling window), set

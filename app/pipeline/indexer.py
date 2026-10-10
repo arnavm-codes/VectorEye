@@ -1,4 +1,4 @@
-"""Embeds all chunked clips and upserts them into Qdrant.
+"""Embeds each raw video's clips (cut on the fly, never stored) and upserts them into Qdrant.
 
 Each point carries up to three independent named vectors: "visual" (CLIP,
 always present), "transcript" (sentence-embedded Whisper transcript,
@@ -9,7 +9,7 @@ where OCR found real text -- see vault note "OCR effort kicked off" entry,
 transcript/ocr_text live in separate vector spaces rather than one blended
 embedding.
 
-Payload carries clip_path (the clip's S3 object key in the clips bucket)/source_id/start_ts/end_ts so search can combine
+Payload carries video_key (the raw video in S3)/start_ts/end_ts (the clip's window in it)/source_id so search can combine
 vector similarity with structured filtering (see vault note "Vector DB"
 section for why Qdrant was fixated for this), plus has_speech/transcript
 for the audio signal, plus generic tags/attributes (see vault note
@@ -24,13 +24,20 @@ from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchValue,
+    PayloadSchemaType,
+    PointStruct,
+    VectorParams,
+)
 
-from app import storage
 from app.config import (
     CLIP_DURATION_SECONDS,
     CLIP_EMBED_DIM,
-    CLIPS_BUCKET,
     ENABLE_AUDIO_SEARCH,
     ENABLE_OCR_SEARCH,
     FRAMES_PER_CLIP,
@@ -39,15 +46,14 @@ from app.config import (
     QDRANT_COLLECTION,
     QDRANT_HOST,
     QDRANT_PORT,
+    RAW_VIDEOS_BUCKET,
     TRANSCRIPT_EMBED_DIM,
 )
+from app.pipeline.chunker import START_TS_DIGITS, cut_video
 from app.pipeline.embedder import embed_clip, sample_frames
-from app.pipeline.video_key import build_stem_index, resolve_video_key
 
-# `source_id` is the fallback-only naming convention: <source_id>_clip<start_ts>.mp4,
-# produced by app.pipeline.chunker for videos that went through the CLI/legacy
-# path with no explicit metadata supplied. Callers that pass `source_id`
-# explicitly to index_clips() (the ingestion-API path) skip this entirely.
+# Clips are named <video key minus extension>_clip<start_ts>.mp4 by app.pipeline.chunker;
+# the regex pulls the start second back out of that name.
 _CLIP_NAME_RE = re.compile(r"^(?P<source_id>.+)_clip(?P<start_ts>\d+)$")
 
 
@@ -111,7 +117,7 @@ def ensure_collection(client: QdrantClient):
         )
     elif QDRANT_COLLECTION not in _migration_checked:
         # Without this guard, ensure_collection() (called on every single
-        # index_clips() call, i.e. every ingest) would re-run a full
+        # index_video() call, i.e. every ingest) would re-run a full
         # paginated scroll of the ENTIRE collection every time -- fine at
         # this project's ~10-point test scale, but directly defeats Phase
         # 4's whole purpose (cheap repeated watch-folder polling against a
@@ -164,90 +170,75 @@ def ensure_collection(client: QdrantClient):
         )
 
 
-def _parse_clip_metadata(clip_key: str) -> dict:
-    # The whole key minus its extension, prefix included, so the derived
-    # source_id is unique per video even when file names repeat across
-    # prefixes (cam1/clip_clip000000.mp4 -> source_id "cam1/clip").
-    stem = PurePosixPath(clip_key).with_suffix("").as_posix()
-    match = _CLIP_NAME_RE.match(stem)
-    if not match:
-        return {"source_id": stem, "start_ts": 0, "end_ts": CLIP_DURATION_SECONDS}
-    # The number in the filename is the clip's actual start second in the
-    # source video (see chunker.py) -- not a sequential index -- since two
-    # overlapping chunking passes (offsets 0 and CHUNK_OVERLAP_SECONDS) share
-    # this naming scheme and can't be told apart by a plain sequence number.
-    start_ts = int(match.group("start_ts"))
-    return {
-        "source_id": match.group("source_id"),
-        "start_ts": start_ts,
-        "end_ts": start_ts + CLIP_DURATION_SECONDS,
-    }
+def _video_stem(video_key: str) -> str:
+    """`cam1/clip.mp4` -> `cam1/clip`: the default source_id, and the base of each clip's
+    virtual name (`cam1/clip_clip000010.mp4`). Includes the prefix so two cameras that both
+    export a file called clip.mp4 stay distinct."""
+    return PurePosixPath(video_key).with_suffix("").as_posix()
 
 
-def _point_id(key: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"s3://{CLIPS_BUCKET}/{key}"))
+def _point_id(video_key: str, start_ts: int) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"s3://{RAW_VIDEOS_BUCKET}/{video_key}#t={start_ts}"))
 
 
-def index_clips(
-    only_new: bool = True,
-    video_stem: str | None = None,
-    keys: list[str] | None = None,
+def _video_filter(video_key: str) -> Filter:
+    return Filter(must=[FieldCondition(key="video_key", match=MatchValue(value=video_key))])
+
+
+def _existing_metadata(client: QdrantClient, video_key: str) -> dict:
+    """source_id/tags/attributes of a video's current points, so re-indexing it (e.g. via
+    /index, which carries no metadata) doesn't silently reset what an earlier /ingest set."""
+    if not client.collection_exists(QDRANT_COLLECTION):
+        return {}
+    points, _ = client.scroll(QDRANT_COLLECTION, scroll_filter=_video_filter(video_key), limit=1, with_payload=True)
+    if not points:
+        return {}
+    payload = points[0].payload
+    return {k: payload[k] for k in ("source_id", "tags", "attributes") if k in payload}
+
+
+def index_video(
+    video_key: str,
     source_id: str | None = None,
     tags: list[str] | None = None,
     attributes: dict | None = None,
-    video_key: str | None = None,
 ) -> int:
-    """Embed clips from the clips bucket and upsert into Qdrant.
+    """Embed one raw video's clips and replace that video's points in Qdrant.
 
-    By default (`keys` omitted) every clip in the bucket is a candidate -- the
-    bulk `/index` behavior. Passing an explicit `keys` list indexes just those
-    clips without listing the bucket -- the path the ingestion API uses so
-    ingesting one new video doesn't touch every other clip already indexed.
+    Clips are cut into a temp directory, embedded, and thrown away -- nothing is stored in
+    S3. Each point records the raw `video_key` and the clip's `start_ts`/`end_ts`; the clip
+    itself is cut again on demand when played (app.pipeline.clip_service).
 
-    only_new=True skips clips whose point already exists (cheap re-runs);
-    pass False after changing the embedding backend or models, or when
-    re-ingesting a changed video.
-    video_stem limits the pass to clips cut from that source video (clip
-    names are `<stem>_clip<start_ts>.mp4`) instead of the whole bucket.
+    All clips are embedded *before* the video's old points are deleted and the new ones
+    upserted, so a failure part-way leaves the previous index for that video untouched, and
+    re-ingesting a changed video can't leave stale points behind (e.g. clips of an older,
+    longer version).
 
-    `source_id`/`tags`/`attributes` are optional explicit metadata applied to
-    every clip indexed by this call. When `source_id` is omitted, each clip's
-    source_id/start_ts/end_ts are derived from its filename.
-
-    `video_key` is the raw video (object key in the raw-videos bucket) the clips
-    were cut from, stored on every point. The ingestion path passes it; when
-    omitted (bulk `/index`), it is resolved per clip against the raw bucket.
+    `source_id`/`tags`/`attributes` left as None are inherited from the video's existing
+    points when it has any (falling back to a filename-derived source_id, no tags, no
+    attributes); a value passed explicitly always wins. `clip_path` is a virtual name
+    (`<stem>_clip<start_ts>.mp4`) kept for compatibility -- no object by that name exists.
     """
     client = get_client()
     ensure_collection(client)
-    stem_index = build_stem_index(storage.list_raw_videos()) if video_key is None else None
+    stem = _video_stem(video_key)
 
-    if keys is None:
-        keys = storage.list_clips()
-    if video_stem is not None:
-        keys = [k for k in keys if _parse_clip_metadata(k)["source_id"] == video_stem]
-    if only_new and keys:
-        existing: set[str] = set()
-        for i in range(0, len(keys), 256):  # batch to keep requests small on large libraries
-            existing |= {
-                str(p.id)
-                for p in client.retrieve(
-                    collection_name=QDRANT_COLLECTION,
-                    ids=[_point_id(k) for k in keys[i : i + 256]],
-                    with_payload=False,
-                    with_vectors=False,
-                )
-            }
-        keys = [k for k in keys if _point_id(k) not in existing]
+    inherited = _existing_metadata(client, video_key)
+    # Truthy check for source_id, not `is not None`: an empty string means "not given",
+    # matching search.py's `_filter_conditions()` check on the other side.
+    source_id = source_id or inherited.get("source_id") or stem
+    tags = tags if tags is not None else inherited.get("tags", [])
+    attributes = attributes if attributes is not None else inherited.get("attributes", {})
 
     points = []
-    for key in keys:
-        print(f"Embedding {key} ...")
-        with storage.local_clip(key) as clip_path:
-            # Sampled once here (not left to embed_clip's own internal
-            # default) so OCR below can reuse these already-decoded frames
-            # via a subsample instead of opening and seeking the video file
-            # a second time. See embed_clip()'s docstring for why this matters.
+    with cut_video(video_key) as clip_paths:
+        for clip_path in clip_paths:
+            match = _CLIP_NAME_RE.match(clip_path.stem)
+            start_ts = int(match.group("start_ts")) if match else 0
+            print(f"Embedding {stem} @ {start_ts}s ...")
+            # Sampled once here (not left to embed_clip's own internal default) so OCR
+            # below can reuse these already-decoded frames via a subsample instead of
+            # opening and seeking the video file a second time.
             frames = sample_frames(clip_path, n_frames=FRAMES_PER_CLIP)
             visual_vector = embed_clip(clip_path, frames=frames)
             vectors = {"visual": visual_vector.tolist()}
@@ -268,12 +259,9 @@ def index_clips(
                 from app.pipeline.ocr import extract_text
                 from app.pipeline.text_embedder import embed_text as embed_general_text
 
-                # Subsampled from the already-decoded `frames` above, not a
-                # fresh sample_frames() call -- OCR wants a sparser sample than
-                # the visual embedding (on-screen text is typically static
-                # across many consecutive frames), but there's no need to
-                # re-open and re-seek the video file to get fewer frames from
-                # it when the denser set already covers the same span.
+                # Subsampled from the already-decoded `frames` above: OCR wants a sparser
+                # sample than the visual embedding (on-screen text is usually static across
+                # consecutive frames), but there's no need to re-read the file for fewer.
                 step = max(len(frames) // OCR_FRAMES_PER_CLIP, 1)
                 ocr_frames = frames[::step][:OCR_FRAMES_PER_CLIP]
                 ocr_text = extract_text(ocr_frames) or None
@@ -281,48 +269,31 @@ def index_clips(
                     print(f"  -> on-screen text detected: {ocr_text!r}")
                     vectors["ocr_text"] = embed_general_text(ocr_text).tolist()
 
-        meta = _parse_clip_metadata(key)
-        # Truthy check, not `is not None` -- an empty string must be treated
-        # the same as omitted (fall back to the filename-derived source_id),
-        # matching search.py's `_filter_conditions()` check on the other side.
-        if source_id:
-            meta["source_id"] = source_id
-        clip_video_key = video_key
-        if clip_video_key is None:
-            clip_video_key, status = resolve_video_key(key, stem_index)
-            if clip_video_key is None:
-                print(f"  warning: no video_key for {key} ({status}); indexing without it")
-        if clip_video_key:
-            meta["video_key"] = clip_video_key
-        points.append(
-            PointStruct(
-                id=_point_id(key),
-                vector=vectors,
-                payload={
-                    # S3 key in the clips bucket (field name kept for compatibility).
-                    "clip_path": key,
-                    "has_speech": transcript is not None,
-                    "transcript": transcript or "",
-                    "has_text": ocr_text is not None,
-                    "ocr_text": ocr_text or "",
-                    "tags": tags or [],
-                    "attributes": attributes or {},
-                    # Used by app.pipeline.sources (Phase 5 visibility) and
-                    # app.pipeline.retention (Phase 5 retention sweep) to
-                    # report/age clips -- ISO 8601 UTC, re-stamped on every
-                    # re-index (a re-ingested clip's age resets, consistent
-                    # with it being freshly (re-)processed).
-                    "indexed_at": datetime.now(timezone.utc).isoformat(),
-                    **meta,
-                },
+            points.append(
+                PointStruct(
+                    id=_point_id(video_key, start_ts),
+                    vector=vectors,
+                    payload={
+                        "video_key": video_key,
+                        "clip_path": f"{stem}_clip{start_ts:0{START_TS_DIGITS}d}.mp4",
+                        "source_id": source_id,
+                        "start_ts": start_ts,
+                        "end_ts": start_ts + CLIP_DURATION_SECONDS,
+                        "has_speech": transcript is not None,
+                        "transcript": transcript or "",
+                        "has_text": ocr_text is not None,
+                        "ocr_text": ocr_text or "",
+                        "tags": tags,
+                        "attributes": attributes,
+                        # Used by app.pipeline.sources (visibility) and app.pipeline.retention
+                        # (expiry) -- ISO 8601 UTC, re-stamped on every re-index.
+                        "indexed_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
             )
-        )
 
+    client.delete(collection_name=QDRANT_COLLECTION, points_selector=FilterSelector(filter=_video_filter(video_key)))
     if points:
         client.upsert(collection_name=QDRANT_COLLECTION, points=points)
-    print(f"Indexed {len(points)} clips into '{QDRANT_COLLECTION}'.")
+    print(f"Indexed {len(points)} clips of {video_key} into '{QDRANT_COLLECTION}'.")
     return len(points)
-
-
-if __name__ == "__main__":
-    index_clips()

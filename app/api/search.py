@@ -11,11 +11,7 @@ hand-rolled fusion logic needed.
 
 from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchAny, MatchValue, Prefetch
 
-from contextlib import nullcontext
-
-from app import storage
 from app.config import (
-    CLIP_SERVING,
     ATTRIBUTE_VERIFICATION_FRAMES,
     ATTRIBUTE_VERIFICATION_POOL,
     ENABLE_ATTRIBUTE_VERIFICATION,
@@ -61,18 +57,11 @@ def _filter_conditions(source_id: str | None, filters: list[dict] | None) -> lis
 
 
 def _clip_url(payload: dict) -> str | None:
-    key = payload.get("clip_path")
-    if CLIP_SERVING == "dynamic" and payload.get("video_key") is not None:
-        return clip_service.signed_clip_url(payload["video_key"], payload["start_ts"], payload["end_ts"])
-    # stored mode, or a point not yet backfilled with video_key
-    return storage.presigned_clip_url(key) if key else None
-
-
-def _local_clip(result: dict):
-    """Context manager yielding a local file for a result's clip."""
-    if CLIP_SERVING == "dynamic" and result.get("video_key") is not None:
-        return nullcontext(clip_service.get_clip_file(result["video_key"], result["start_ts"], result["end_ts"]))
-    return storage.local_clip(result["clip_path"])
+    """Signed URL that cuts the clip's window out of its raw video on demand. A point with no
+    video_key (an unresolvable legacy one -- see scripts/backfill_video_key.py) has no clip."""
+    if payload.get("video_key") is None:
+        return None
+    return clip_service.signed_clip_url(payload["video_key"], payload["start_ts"], payload["end_ts"])
 
 
 def _to_result(hit) -> dict:
@@ -105,8 +94,12 @@ def _rerank_by_attribute(results: list[dict], attribute: str, obj: str, top_k: i
     from app.pipeline.object_verifier import verify_attribute_in_frames
 
     for result in results:
-        with _local_clip(result) as local_path:
-            frames = sample_frames(local_path, n_frames=ATTRIBUTE_VERIFICATION_FRAMES)
+        if result.get("video_key") is None:  # nothing to cut a clip from
+            result["attribute_score"] = 0.0
+            continue
+        # Cut on demand (cached on local disk), the same clip a user would be shown.
+        clip_file = clip_service.get_clip_file(result["video_key"], result["start_ts"], result["end_ts"])
+        frames = sample_frames(clip_file, n_frames=ATTRIBUTE_VERIFICATION_FRAMES)
         result["attribute_score"] = verify_attribute_in_frames(frames, attribute, obj)
 
     results.sort(key=lambda r: r["attribute_score"], reverse=True)
