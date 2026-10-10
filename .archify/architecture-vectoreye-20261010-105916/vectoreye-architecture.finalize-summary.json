@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/candidate.json",
+    "sha256": "566746af542fa996a072422ed7747076c975d53d39429ec50dd567d71fd5ac8a",
+    "bytes": 7893
+  },
+  "artifact": {
+    "path": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/vectoreye-architecture.html",
+    "sha256": "9ae1e76091f8ed24472ed39a8cb6abe54488997b173a2f9765ed9d52c7c73ea4",
+    "bytes": 773542
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/vectoreye-architecture.finalize.json",
+    "summaryReceipt": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/vectoreye-architecture.finalize-summary.json",
+    "browserCheckReceipt": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/vectoreye-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "disabled"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3901,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "resolvedCrossovers": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [
+        {
+          "left": {
+            "id": "api-to-ingest",
+            "from": "api",
+            "to": "ingest",
+            "label": "POST /ingest",
+            "collectionIndex": 0,
+            "artifactIndex": 1
+          },
+          "right": {
+            "id": "ingest-to-state",
+            "from": "ingest",
+            "to": "state",
+            "label": "has_changed",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "point": [
+            292.59999999999997,
+            297.99999999999994
+          ],
+          "sharedNode": "ingest"
+        }
+      ],
+      "detours": [],
+      "truncated": false
+    },
+    "hints": [
+      "api → ingest and ingest → state cross next to ingest: move node api or state so the two reach ingest from different sides (for example one level with it, one directly above or below it)."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

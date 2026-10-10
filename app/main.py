@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from botocore.exceptions import ClientError
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app import storage
@@ -21,6 +21,7 @@ from app.config import (
     RETENTION_SWEEP_INTERVAL_SECONDS,
     WATCH_POLL_INTERVAL_SECONDS,
 )
+from app.pipeline import clip_service
 from app.pipeline import ingest as ingest_pipeline
 from app.pipeline import retention as retention_pipeline
 from app.pipeline import sources as sources_pipeline
@@ -338,6 +339,23 @@ def retention_sweep():
     ENABLE_RETENTION_SWEEP, which only gates the *automatic* periodic loop;
     an explicit one-shot trigger doesn't need that same opt-in."""
     return {"deleted": retention_pipeline.sweep_once()}
+
+
+@app.get("/clip")
+def get_clip_window(video_key: str, start: int, end: int, exp: int, sig: str):
+    """Dynamic clip: cuts [start, end) out of the raw video on demand (cached). Only
+    reachable through the signed URLs search returns -- see app.pipeline.clip_service."""
+    if not clip_service.verify_signature(video_key, start, end, exp, sig):
+        raise HTTPException(status_code=403, detail="invalid or expired clip URL")
+    try:
+        path = clip_service.get_clip_file(video_key, start, end)
+    except clip_service.ClipInvalid as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except clip_service.ClipNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except clip_service.ClipError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/clip/{clip_key:path}")

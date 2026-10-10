@@ -92,7 +92,8 @@ def run_job(
         # only_new=False: a changed video is re-ingested, so its clips (same
         # keys as before) must be re-embedded rather than skipped as existing.
         clips_indexed = index_clips(
-            only_new=False, keys=clip_keys, source_id=source_id, tags=tags, attributes=attributes
+            only_new=False, keys=clip_keys, source_id=source_id, tags=tags, attributes=attributes,
+            video_key=video_key,
         )
 
         # Marked only after a fully successful run -- a failed attempt must

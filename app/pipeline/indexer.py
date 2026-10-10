@@ -42,6 +42,7 @@ from app.config import (
     TRANSCRIPT_EMBED_DIM,
 )
 from app.pipeline.embedder import embed_clip, sample_frames
+from app.pipeline.video_key import build_stem_index, resolve_video_key
 
 # `source_id` is the fallback-only naming convention: <source_id>_clip<start_ts>.mp4,
 # produced by app.pipeline.chunker for videos that went through the CLI/legacy
@@ -194,6 +195,7 @@ def index_clips(
     source_id: str | None = None,
     tags: list[str] | None = None,
     attributes: dict | None = None,
+    video_key: str | None = None,
 ) -> int:
     """Embed clips from the clips bucket and upsert into Qdrant.
 
@@ -211,9 +213,14 @@ def index_clips(
     `source_id`/`tags`/`attributes` are optional explicit metadata applied to
     every clip indexed by this call. When `source_id` is omitted, each clip's
     source_id/start_ts/end_ts are derived from its filename.
+
+    `video_key` is the raw video (object key in the raw-videos bucket) the clips
+    were cut from, stored on every point. The ingestion path passes it; when
+    omitted (bulk `/index`), it is resolved per clip against the raw bucket.
     """
     client = get_client()
     ensure_collection(client)
+    stem_index = build_stem_index(storage.list_raw_videos()) if video_key is None else None
 
     if keys is None:
         keys = storage.list_clips()
@@ -280,6 +287,13 @@ def index_clips(
         # matching search.py's `_filter_conditions()` check on the other side.
         if source_id:
             meta["source_id"] = source_id
+        clip_video_key = video_key
+        if clip_video_key is None:
+            clip_video_key, status = resolve_video_key(key, stem_index)
+            if clip_video_key is None:
+                print(f"  warning: no video_key for {key} ({status}); indexing without it")
+        if clip_video_key:
+            meta["video_key"] = clip_video_key
         points.append(
             PointStruct(
                 id=_point_id(key),

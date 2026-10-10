@@ -27,6 +27,27 @@ RAW_VIDEOS_BUCKET = os.environ.get("RAW_VIDEOS_BUCKET", "raw-videos")
 CLIPS_BUCKET = os.environ.get("CLIPS_BUCKET", "chunks")
 PRESIGN_EXPIRY_SECONDS = int(os.environ.get("PRESIGN_EXPIRY_SECONDS", "3600"))
 
+# --- Clip serving ---
+# "stored": clips are pre-cut and kept in CLIPS_BUCKET; search returns a presigned S3 URL.
+# "dynamic": nothing is stored -- the requested window is cut from the raw video with
+# ffmpeg on demand (app/pipeline/clip_service.py) and cached on local disk.
+CLIP_SERVING = os.environ.get("CLIP_SERVING", "stored").lower()
+if CLIP_SERVING not in {"stored", "dynamic"}:
+    raise ValueError(f"Unknown CLIP_SERVING {CLIP_SERVING!r} (expected 'stored' or 'dynamic')")
+# Base URL clients use to reach this API; embedded in dynamic-mode clip URLs.
+API_PUBLIC_URL = os.environ.get("API_PUBLIC_URL", f"http://localhost:{os.environ.get('VECTOREYE_PORT', '9100')}").rstrip("/")
+# Dynamic clip URLs are HMAC-signed so a URL only ever exposes the matched window, never
+# arbitrary parts of a raw recording. Required in dynamic mode: every process that builds
+# search results (the API, the Streamlit UI) must sign with the same secret the API verifies with.
+CLIP_SIGNING_SECRET = os.environ.get("CLIP_SIGNING_SECRET", "")
+if CLIP_SERVING == "dynamic" and not CLIP_SIGNING_SECRET:
+    raise ValueError("CLIP_SERVING=dynamic requires CLIP_SIGNING_SECRET to be set (see .env.example)")
+CLIP_CACHE_DIR = Path(os.environ.get("CLIP_CACHE_DIR", PROJECT_ROOT / "data" / "clip_cache"))
+CLIP_CACHE_MAX_MB = int(os.environ.get("CLIP_CACHE_MAX_MB", "2048"))
+CLIP_CUT_CONCURRENCY = int(os.environ.get("CLIP_CUT_CONCURRENCY", "2"))
+CLIP_MAX_SECONDS = int(os.environ.get("CLIP_MAX_SECONDS", "60"))
+CLIP_CUT_TIMEOUT_SECONDS = int(os.environ.get("CLIP_CUT_TIMEOUT_SECONDS", "120"))
+
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi"}
 
 CLIP_DURATION_SECONDS = 10
@@ -168,7 +189,7 @@ ATTRIBUTE_VERIFICATION_FRAMES = int(os.environ.get("ATTRIBUTE_VERIFICATION_FRAME
 # the only thing actually required up front is which fields need an index.
 PAYLOAD_INDEX_FIELDS = [
     f.strip()
-    for f in os.environ.get("PAYLOAD_INDEX_FIELDS", "source_id,tags").split(",")
+    for f in os.environ.get("PAYLOAD_INDEX_FIELDS", "source_id,tags,video_key").split(",")
     if f.strip()
 ]
 

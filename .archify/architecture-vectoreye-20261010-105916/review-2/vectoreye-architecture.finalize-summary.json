@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/candidate.json",
+    "sha256": "f14cfe65aaa23a4c50454a425af65bb4d21cbe61840818a92e345601fa36f3e1",
+    "bytes": 7893
+  },
+  "artifact": {
+    "path": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/vectoreye-architecture.html",
+    "sha256": "9e25d1e3c01c5aacfc54c4254fc2a63dbae6bd37a4043e784eb5829ba5671550",
+    "bytes": 773519
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/review-2/vectoreye-architecture.finalize.json",
+    "summaryReceipt": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/review-2/vectoreye-architecture.finalize-summary.json",
+    "browserCheckReceipt": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/review-2/vectoreye-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "disabled"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3903
+}

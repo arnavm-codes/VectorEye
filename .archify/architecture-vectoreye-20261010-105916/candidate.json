@@ -1,0 +1,454 @@
+{
+ "schema_version": 1,
+ "diagram_type": "architecture",
+ "meta": {
+  "title": "VectorEye: from raw video to searchable clips",
+  "output": ".archify/architecture-vectoreye-20261010-105916/vectoreye-architecture.html",
+  "quality_profile": "showcase",
+  "repository": {
+   "url": "https://github.com/arnavm-codes/VectorEye.git",
+   "provider": "github",
+   "link_mode": "web",
+   "revision": "79d852225a65136ab805b7c7fcd75c13030323df"
+  }
+ },
+ "components": [
+  {
+   "id": "watch",
+   "type": "backend",
+   "label": "Watch worker",
+   "sublabel": "polls a bucket prefix",
+   "pos": [
+    40,
+    40
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/pipeline/watch.py",
+     "line": 38,
+     "end_line": 56,
+     "label": "poll loop"
+    },
+    {
+     "path": "app/pipeline/watch.py",
+     "line": 63,
+     "label": "start_watch"
+    }
+   ]
+  },
+  {
+   "id": "raw",
+   "type": "cloud",
+   "label": "S3 raw-videos",
+   "sublabel": "original footage",
+   "pos": [
+    330,
+    40
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/storage.py",
+     "line": 81,
+     "end_line": 83,
+     "label": "list_raw_videos"
+    },
+    {
+     "path": "app/config.py",
+     "line": 26,
+     "label": "bucket name"
+    }
+   ]
+  },
+  {
+   "id": "api",
+   "type": "backend",
+   "label": "FastAPI service",
+   "sublabel": "ingest, watch, search",
+   "pos": [
+    40,
+    210
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/main.py",
+     "line": 199,
+     "end_line": 213,
+     "label": "POST /ingest"
+    },
+    {
+     "path": "app/main.py",
+     "line": 271,
+     "end_line": 281,
+     "label": "POST /watch"
+    },
+    {
+     "path": "app/main.py",
+     "line": 126,
+     "end_line": 139,
+     "label": "POST /search"
+    }
+   ],
+   "tag": ":9100"
+  },
+  {
+   "id": "ingest",
+   "type": "backend",
+   "label": "Ingest job",
+   "sublabel": "skip unchanged, chunk",
+   "pos": [
+    330,
+    210
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/pipeline/ingest.py",
+     "line": 62,
+     "end_line": 100,
+     "label": "run_job"
+    },
+    {
+     "path": "app/pipeline/chunker.py",
+     "line": 92,
+     "end_line": 110,
+     "label": "chunk_video_key"
+    }
+   ]
+  },
+  {
+   "id": "embed",
+   "type": "backend",
+   "label": "Embed and index",
+   "sublabel": "CLIP, Whisper, OCR",
+   "pos": [
+    620,
+    210
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/pipeline/indexer.py",
+     "line": 239,
+     "end_line": 252,
+     "label": "visual + speech"
+    },
+    {
+     "path": "app/pipeline/indexer.py",
+     "line": 261,
+     "end_line": 272,
+     "label": "OCR (opt-in)"
+    },
+    {
+     "path": "app/pipeline/indexer.py",
+     "line": 308,
+     "label": "upsert"
+    }
+   ]
+  },
+  {
+   "id": "qdrant",
+   "type": "database",
+   "label": "Qdrant",
+   "sublabel": "vectors + payload",
+   "pos": [
+    910,
+    210
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/pipeline/indexer.py",
+     "line": 97,
+     "end_line": 110,
+     "label": "create_collection"
+    },
+    {
+     "path": "app/pipeline/indexer.py",
+     "line": 308,
+     "label": "upsert"
+    }
+   ],
+   "tag": ":6333"
+  },
+  {
+   "id": "state",
+   "type": "database",
+   "label": "Change state",
+   "sublabel": ".ingest_state.json",
+   "pos": [
+    620,
+    40
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/pipeline/change_detection.py",
+     "line": 28,
+     "label": "state file"
+    },
+    {
+     "path": "app/pipeline/change_detection.py",
+     "line": 49,
+     "end_line": 58,
+     "label": "has_changed / mark"
+    }
+   ]
+  },
+  {
+   "id": "chunks",
+   "type": "cloud",
+   "label": "S3 chunks",
+   "sublabel": "pre-cut 10 s clips",
+   "pos": [
+    330,
+    380
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/storage.py",
+     "line": 110,
+     "end_line": 113,
+     "label": "upload_clip"
+    },
+    {
+     "path": "app/storage.py",
+     "line": 128,
+     "end_line": 133,
+     "label": "presigned URL"
+    },
+    {
+     "path": "app/config.py",
+     "line": 27,
+     "label": "bucket name"
+    }
+   ]
+  },
+  {
+   "id": "groq",
+   "type": "external",
+   "label": "Groq (optional)",
+   "sublabel": "query cleanup, summary",
+   "pos": [
+    1200,
+    380
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/chat/groq_wrapper.py",
+     "line": 25,
+     "end_line": 44,
+     "label": "clean_query"
+    },
+    {
+     "path": "app/chat/groq_wrapper.py",
+     "line": 46,
+     "end_line": 60,
+     "label": "explain_results"
+    }
+   ]
+  },
+  {
+   "id": "search",
+   "type": "backend",
+   "label": "search_clips",
+   "sublabel": "query to nearest clips",
+   "pos": [
+    910,
+    550
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/api/search.py",
+     "line": 96,
+     "end_line": 110,
+     "label": "search_clips"
+    },
+    {
+     "path": "app/api/search.py",
+     "line": 132,
+     "end_line": 140,
+     "label": "query_points"
+    },
+    {
+     "path": "app/pipeline/embedder.py",
+     "line": 116,
+     "end_line": 123,
+     "label": "embed_text"
+    }
+   ]
+  },
+  {
+   "id": "ui",
+   "type": "frontend",
+   "label": "Streamlit UI",
+   "sublabel": "search box, clip player",
+   "pos": [
+    1200,
+    550
+   ],
+   "size": [
+    150,
+    64
+   ],
+   "sources": [
+    {
+     "path": "app/ui/streamlit_app.py",
+     "line": 158,
+     "end_line": 178,
+     "label": "calls search_clips"
+    },
+    {
+     "path": "app/ui/streamlit_app.py",
+     "line": 192,
+     "end_line": 194,
+     "label": "st.video"
+    }
+   ],
+   "tag": ":8501"
+  }
+ ],
+ "connections": [
+  {
+   "id": "api-to-ingest",
+   "from": "api",
+   "to": "ingest",
+   "label": "POST /ingest",
+   "variant": "emphasis"
+  },
+  {
+   "id": "watch-to-ingest",
+   "from": "watch",
+   "to": "ingest",
+   "label": "new or changed"
+  },
+  {
+   "id": "raw-to-ingest",
+   "from": "raw",
+   "to": "ingest",
+   "label": "download video"
+  },
+  {
+   "id": "ingest-to-state",
+   "from": "ingest",
+   "to": "state",
+   "label": "has_changed",
+   "variant": "dashed"
+  },
+  {
+   "id": "ingest-to-chunks",
+   "from": "ingest",
+   "to": "chunks",
+   "label": "upload clips"
+  },
+  {
+   "id": "ingest-to-embed",
+   "from": "ingest",
+   "to": "embed",
+   "label": "index_clips",
+   "variant": "emphasis"
+  },
+  {
+   "id": "chunks-to-embed",
+   "from": "chunks",
+   "to": "embed",
+   "label": "download clip"
+  },
+  {
+   "id": "embed-to-qdrant",
+   "from": "embed",
+   "to": "qdrant",
+   "label": "upsert points",
+   "variant": "emphasis"
+  },
+  {
+   "id": "ui-to-search",
+   "from": "ui",
+   "to": "search",
+   "label": "query",
+   "variant": "emphasis"
+  },
+  {
+   "id": "search-to-qdrant",
+   "from": "search",
+   "to": "qdrant",
+   "label": "query_points"
+  },
+  {
+   "id": "search-to-chunks",
+   "from": "search",
+   "to": "chunks",
+   "label": "presign clip_url"
+  },
+  {
+   "id": "ui-to-groq",
+   "from": "ui",
+   "to": "groq",
+   "label": "chat mode",
+   "variant": "dashed"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Ingest",
+   "items": [
+    "Each video is cut into 10 s clips, with a second pass offset by 5 s",
+    "Clips are re-encoded to H.264 and uploaded to the chunks bucket",
+    "A video whose S3 ETag and size are unchanged is skipped unless forced"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "Search",
+   "items": [
+    "The query is embedded with the same CLIP model as the clips",
+    "Speech and OCR vectors fuse in with RRF when those options are on",
+    "Each hit carries a presigned S3 URL for playback"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Also in the API",
+   "items": [
+    "/chat adds Groq query cleanup, /clip proxies stored clips",
+    "/sources lists or deletes a source, /retention/sweep expires old clips"
+   ]
+  }
+ ]
+}

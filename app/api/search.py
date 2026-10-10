@@ -11,8 +11,11 @@ hand-rolled fusion logic needed.
 
 from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchAny, MatchValue, Prefetch
 
+from contextlib import nullcontext
+
 from app import storage
 from app.config import (
+    CLIP_SERVING,
     ATTRIBUTE_VERIFICATION_FRAMES,
     ATTRIBUTE_VERIFICATION_POOL,
     ENABLE_ATTRIBUTE_VERIFICATION,
@@ -21,6 +24,7 @@ from app.config import (
     MIN_TRANSCRIPT_SCORE,
     QDRANT_COLLECTION,
 )
+from app.pipeline import clip_service
 from app.pipeline.embedder import embed_text, sample_frames
 from app.pipeline.indexer import get_client
 from app.pipeline.query_parser import extract_attribute_object_pairs
@@ -56,13 +60,29 @@ def _filter_conditions(source_id: str | None, filters: list[dict] | None) -> lis
     return conditions
 
 
+def _clip_url(payload: dict) -> str | None:
+    key = payload.get("clip_path")
+    if CLIP_SERVING == "dynamic" and payload.get("video_key") is not None:
+        return clip_service.signed_clip_url(payload["video_key"], payload["start_ts"], payload["end_ts"])
+    # stored mode, or a point not yet backfilled with video_key
+    return storage.presigned_clip_url(key) if key else None
+
+
+def _local_clip(result: dict):
+    """Context manager yielding a local file for a result's clip."""
+    if CLIP_SERVING == "dynamic" and result.get("video_key") is not None:
+        return nullcontext(clip_service.get_clip_file(result["video_key"], result["start_ts"], result["end_ts"]))
+    return storage.local_clip(result["clip_path"])
+
+
 def _to_result(hit) -> dict:
     key = hit.payload.get("clip_path")
     return {
         "score": hit.score,
         "clip_path": key,
-        "clip_url": storage.presigned_clip_url(key) if key else None,
+        "clip_url": _clip_url(hit.payload),
         "source_id": hit.payload.get("source_id"),
+        "video_key": hit.payload.get("video_key"),
         "start_ts": hit.payload.get("start_ts"),
         "end_ts": hit.payload.get("end_ts"),
         "has_speech": hit.payload.get("has_speech", False),
@@ -85,7 +105,7 @@ def _rerank_by_attribute(results: list[dict], attribute: str, obj: str, top_k: i
     from app.pipeline.object_verifier import verify_attribute_in_frames
 
     for result in results:
-        with storage.local_clip(result["clip_path"]) as local_path:
+        with _local_clip(result) as local_path:
             frames = sample_frames(local_path, n_frames=ATTRIBUTE_VERIFICATION_FRAMES)
         result["attribute_score"] = verify_attribute_in_frames(frames, attribute, obj)
 

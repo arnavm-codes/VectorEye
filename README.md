@@ -253,6 +253,19 @@ fallback, `/clip/{key}` proxies the clip from S3:
 curl localhost:9100/clip/front-gate-camera_clip000010.mp4 --output clip.mp4
 ```
 
+### Clip serving: stored or dynamic
+
+`CLIP_SERVING=stored` (default) keeps pre-cut clips in the `chunks` bucket and returns
+presigned S3 URLs. `CLIP_SERVING=dynamic` stores no clips at all: each search result's
+`clip_url` points at `GET /clip?video_key=&start=&end=&exp=&sig=`, which cuts that window out
+of the raw video with ffmpeg on demand (re-encoded to H.264/AAC, so `.mkv`/`.avi`/HEVC
+footage plays in a browser) and caches it on local disk (`CLIP_CACHE_DIR`, trimmed to
+`CLIP_CACHE_MAX_MB`). URLs are HMAC-signed and expiring and valid for that one window only,
+so they never expose the rest of a recording. Dynamic mode needs `CLIP_SIGNING_SECRET`
+(shared by the API and the Streamlit UI) and the API reachable at `API_PUBLIC_URL`.
+Points indexed before `video_key` existed need `uv run python scripts/backfill_video_key.py --apply`
+once.
+
 ### 3. Bulk indexing and health
 
 ```bash

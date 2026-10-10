@@ -1,0 +1,860 @@
+{
+ "taken": "2026-10-10T10:37:12.678143",
+ "collection": "video_clips_longclip",
+ "modes": {
+  "visual_only": {
+   "mean_precision": 0.45454545454545453,
+   "mean_recall": 0.625,
+   "queries": 12,
+   "per_query": [
+    {
+     "query": "Find clips with blue cars.",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.2775,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.2685,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.2684,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.2591,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.2537,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Is there any clip with Black SUV exiting through society gate?",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.3168,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.3033,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.3028,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.2893,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.2754,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Find clip where people are fighting.",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.2445,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.2416,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "Topic2.1_clip000115.mp4",
+       "score": 0.2379,
+       "start_ts": 115,
+       "end_ts": 125,
+       "source_id": "Topic2.1"
+      }
+     ]
+    },
+    {
+     "query": "Find clip where people are shouting what the hell",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.2532,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.2531,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.2447,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.2434,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-07-29_clip000015.mp4",
+       "score": 0.2415,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Is there a clip with Lifestyle shop?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.2711,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.2595,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.247,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000010.mp4",
+       "score": 0.2421,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000015.mp4",
+       "score": 0.2386,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Is there anyone with red shirt walking around?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.2556,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.2481,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Can you see clips with only scooters",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.28,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.2664,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.2596,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.2555,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.2515,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Find all people in white shirt",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.2641,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.2568,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.2563,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000010.mp4",
+       "score": 0.2513,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000015.mp4",
+       "score": 0.2465,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Which clips are from camera CAM 03?",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.2708,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.268,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.2641,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.2615,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.2585,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Which clips are from camera CAM-08?",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.2737,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.2709,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.2659,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.2654,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.2631,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Is there a Shoppers Stop sign visible?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.2978,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.2867,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000010.mp4",
+       "score": 0.2682,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000015.mp4",
+       "score": 0.2652,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.2563,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Is there a Marks and Spencer sign visible?",
+     "results": []
+    }
+   ]
+  },
+  "transcript_fusion": {
+   "mean_precision": 0.41111111111111115,
+   "mean_recall": 0.7374999999999999,
+   "queries": 12,
+   "per_query": [
+    {
+     "query": "Find clips with blue cars.",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.5,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "Topic2.1_clip000085.mp4",
+       "score": 0.5,
+       "start_ts": 85,
+       "end_ts": 95,
+       "source_id": "Topic2.1"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.3333,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.25,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.2,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Is there any clip with Black SUV exiting through society gate?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.5,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.5,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.3333,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.25,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.2,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Find clip where people are fighting.",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.5,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.3333,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "Topic2.1_clip000115.mp4",
+       "score": 0.25,
+       "start_ts": 115,
+       "end_ts": 125,
+       "source_id": "Topic2.1"
+      }
+     ]
+    },
+    {
+     "query": "Find clip where people are shouting what the hell",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.625,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.5,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.3333,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.3333,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.25,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Is there a clip with Lifestyle shop?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 1.0,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.3333,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.25,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000010.mp4",
+       "score": 0.2,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000015.mp4",
+       "score": 0.1667,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Is there anyone with red shirt walking around?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 1.0,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.3333,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Can you see clips with only scooters",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.5,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.5,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.3333,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-09-01_clip000005.mp4",
+       "score": 0.3333,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.25,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Find all people in white shirt",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.5,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.3333,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000020.mp4",
+       "score": 0.25,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000010.mp4",
+       "score": 0.2,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000015.mp4",
+       "score": 0.1667,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Which clips are from camera CAM 03?",
+     "results": [
+      {
+       "clip_path": "Topic2.1_clip000115.mp4",
+       "score": 0.625,
+       "start_ts": 115,
+       "end_ts": 125,
+       "source_id": "Topic2.1"
+      },
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.5,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "Topic2.1_clip000120.mp4",
+       "score": 0.3333,
+       "start_ts": 120,
+       "end_ts": 130,
+       "source_id": "Topic2.1"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.3333,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000015.mp4",
+       "score": 0.25,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Which clips are from camera CAM-08?",
+     "results": [
+      {
+       "clip_path": "2026-09-01_clip000020.mp4",
+       "score": 0.5,
+       "start_ts": 20,
+       "end_ts": 30,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "Topic2.1_clip000115.mp4",
+       "score": 0.5,
+       "start_ts": 115,
+       "end_ts": 125,
+       "source_id": "Topic2.1"
+      },
+      {
+       "clip_path": "Topic2.1_clip000120.mp4",
+       "score": 0.3333,
+       "start_ts": 120,
+       "end_ts": 130,
+       "source_id": "Topic2.1"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.3333,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-09-01_clip000000.mp4",
+       "score": 0.25,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-09-01"
+      }
+     ]
+    },
+    {
+     "query": "Is there a Shoppers Stop sign visible?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 1.0,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.6667,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-09-01_clip000010.mp4",
+       "score": 0.25,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-09-01"
+      },
+      {
+       "clip_path": "2026-07-29_clip000010.mp4",
+       "score": 0.25,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000015.mp4",
+       "score": 0.2,
+       "start_ts": 15,
+       "end_ts": 25,
+       "source_id": "2026-07-29"
+      }
+     ]
+    },
+    {
+     "query": "Is there a Marks and Spencer sign visible?",
+     "results": [
+      {
+       "clip_path": "2026-07-29_clip000000.mp4",
+       "score": 0.5,
+       "start_ts": 0,
+       "end_ts": 10,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "2026-07-29_clip000005.mp4",
+       "score": 0.3333,
+       "start_ts": 5,
+       "end_ts": 15,
+       "source_id": "2026-07-29"
+      },
+      {
+       "clip_path": "Topic2.1_clip000010.mp4",
+       "score": 0.25,
+       "start_ts": 10,
+       "end_ts": 20,
+       "source_id": "Topic2.1"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

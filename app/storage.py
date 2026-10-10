@@ -90,6 +90,14 @@ def raw_video_exists(key: str) -> bool:
         return False
 
 
+def raw_video_internal_url(key: str, expires: int = 600) -> str:
+    """Short-lived URL on the *internal* endpoint, for server-side tools (ffmpeg).
+    Never returned to clients -- it exposes the whole raw recording."""
+    return get_s3().generate_presigned_url(
+        "get_object", Params={"Bucket": RAW_VIDEOS_BUCKET, "Key": key}, ExpiresIn=expires
+    )
+
+
 def raw_video_fingerprint(key: str) -> list:
     """(ETag, size) of a raw video object -- what change detection compares to
     decide whether a video needs re-processing. Raises ClientError if missing."""

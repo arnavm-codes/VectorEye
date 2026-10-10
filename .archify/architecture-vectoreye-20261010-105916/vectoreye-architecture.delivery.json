@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "6c9c7553-b982-456d-b20a-eac74708a080",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/candidate.json",
+  "output": "/home/arnav/Projects/VectorEye/.archify/architecture-vectoreye-20261010-105916/vectoreye-architecture.html",
+  "specification": {
+    "sha256": "f14cfe65aaa23a4c50454a425af65bb4d21cbe61840818a92e345601fa36f3e1",
+    "bytes": 7893
+  },
+  "artifact": {
+    "sha256": "9e25d1e3c01c5aacfc54c4254fc2a63dbae6bd37a4043e784eb5829ba5671550",
+    "bytes": 773519
+  }
+}
